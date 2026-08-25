@@ -6,14 +6,10 @@
 <title>모둠 신청 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
 <style>
-.topic-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.topic-card.mine { border: 2px solid var(--accent); }
-.topic-title { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
-.topic-count { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
-.topic-members { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px; line-height: 1.6; }
-.join-btn { padding: 10px 16px; border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 700; cursor: pointer; width: 100%; }
-.join-btn.off { background: var(--accent-soft); color: var(--accent); }
-.join-btn.on { background: var(--accent); color: #fff; }
+.final-card { background: var(--accent); color: #fff; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 14px; }
+.final-card .label { font-size: 0.82rem; opacity: 0.85; margin-bottom: 4px; }
+.final-card .topic { font-size: 1.15rem; font-weight: 700; }
+select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; background: var(--surface); color: var(--text); }
 </style>
 </head>
 <body>
@@ -21,7 +17,7 @@
 <div class="wrap">
   <div class="header">
     <h1>🙋 모둠 신청</h1>
-    <p>선생님이 채택한 주제 중 하나를 골라 참여해보세요. 다른 주제를 다시 누르면 신청이 바뀝니다.</p>
+    <p>채택된 주제 중 1~3지망을 골라 신청하세요. 선생님이 지망을 참고해서 모둠을 배정합니다.</p>
   </div>
 
   <div class="who-banner">
@@ -29,7 +25,7 @@
     <a href="index.html">메인으로</a>
   </div>
 
-  <div id="topicList"><div class="loading-state">불러오는 중...</div></div>
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
 </div>
 
 <script src="session.js"></script>
@@ -37,9 +33,7 @@
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 let YEAR = null;
 const student = requireSrLogin();
-
 let adopted = {};
-let groups = {};
 
 function esc(str) {
   if (!str) return '';
@@ -52,50 +46,80 @@ async function loadYear() {
   return (cfg && cfg.year) || new Date().getFullYear();
 }
 
-async function loadAll() {
-  const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
-  const [a, g] = await Promise.all([
-    fetch(`${base}/adopted.json`).then(r => r.json()),
-    fetch(`${base}/groups.json`).then(r => r.json()),
-  ]);
-  adopted = a || {};
-  groups = g || {};
-  render();
+function topicOptions(selectedId) {
+  return '<option value="">선택 안 함</option>' + Object.entries(adopted).map(([id, t]) =>
+    `<option value="${id}"${id === selectedId ? ' selected' : ''}>${esc(t.label)}</option>`
+  ).join('');
 }
 
-function render() {
-  const ids = Object.keys(adopted);
-  const wrap = document.getElementById('topicList');
-  if (!ids.length) {
-    wrap.innerHTML = '<div class="empty-state">아직 채택된 주제가 없습니다. 선생님이 채택할 때까지 기다려주세요.</div>';
-    return;
-  }
+function renderFinal(final) {
+  document.getElementById('content').innerHTML = `<div class="final-card">
+    <div class="label">배정된 모둠</div>
+    <div class="topic">${esc(final.topicLabel)}</div>
+  </div>
+  <p class="hint" style="text-align:center">선생님이 이미 모둠을 배정했습니다. 다음 차시부터는 이 모둠으로 활동합니다.</p>`;
+}
 
-  const myTopicId = Object.keys(groups).find(id => groups[id][student.id]) || null;
-
-  wrap.innerHTML = ids.map(topicId => {
-    const members = Object.values(groups[topicId] || {});
-    const isMine = topicId === myTopicId;
-    return `<div class="topic-card${isMine ? ' mine' : ''}">
-      <div class="topic-title">${esc(adopted[topicId].label)}</div>
-      <div class="topic-count">${members.length}명 신청함</div>
-      <div class="topic-members">${members.map(m => esc(m.name)).join(', ')}</div>
-      <button class="join-btn ${isMine ? 'on' : 'off'}" onclick="joinTopic('${topicId}')">${isMine ? '신청됨 ✓' : '이 주제로 신청하기'}</button>
+function renderForm(existingPref) {
+  const c1 = existingPref ? existingPref.choice1 : '';
+  const c2 = existingPref ? existingPref.choice2 : '';
+  const c3 = existingPref ? existingPref.choice3 : '';
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <h2>1지망</h2>
+      <select id="choice1">${topicOptions(c1)}</select>
+    </div>
+    <div class="card">
+      <h2>2지망</h2>
+      <select id="choice2">${topicOptions(c2)}</select>
+    </div>
+    <div class="card">
+      <h2>3지망</h2>
+      <select id="choice3">${topicOptions(c3)}</select>
+    </div>
+    <div class="card">
+      <div class="error-msg" id="prefError"></div>
+      <div class="ok-msg" id="prefOk"></div>
+      <button class="btn" onclick="onSubmitPref()">신청하기</button>
     </div>`;
-  }).join('');
 }
 
-window.joinTopic = async function(topicId) {
-  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/groups`;
-  // 기존에 다른 주제에 신청했었다면 그 자리를 먼저 지운다 (한 사람당 하나의 주제만).
-  const prevTopicId = Object.keys(groups).find(id => groups[id][student.id]);
-  if (prevTopicId && prevTopicId !== topicId) {
-    await fetch(`${base}/${prevTopicId}/${student.id}.json`, { method: 'DELETE' });
+function setError(msg) {
+  const el = document.getElementById('prefError');
+  if (!el) return;
+  if (!msg) { el.classList.remove('show'); el.textContent = ''; return; }
+  el.textContent = msg; el.classList.add('show');
+}
+function setOk(msg) {
+  const el = document.getElementById('prefOk');
+  if (!el) return;
+  if (!msg) { el.classList.remove('show'); el.textContent = ''; return; }
+  el.textContent = msg; el.classList.add('show');
+}
+
+window.onSubmitPref = async function() {
+  const choice1 = document.getElementById('choice1').value;
+  const choice2 = document.getElementById('choice2').value;
+  const choice3 = document.getElementById('choice3').value;
+  setError('');
+
+  if (!choice1) { setError('1지망은 반드시 선택해주세요.'); return; }
+  const picked = [choice1, choice2, choice3].filter(Boolean);
+  if (new Set(picked).size !== picked.length) { setError('같은 주제를 여러 지망에 중복해서 고를 수 없습니다.'); return; }
+
+  try {
+    const payload = {
+      name: student.name, grade: student.grade, ban: student.ban, num: student.num,
+      choice1, choice2: choice2 || null, choice3: choice3 || null, ts: Date.now(),
+    };
+    const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/preferences/${student.id}.json`, {
+      method: 'PUT', body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('신청 중 오류가 발생했습니다.');
+    setOk('신청이 완료되었습니다. 지망을 바꾸고 싶으면 다시 선택하고 신청하기를 누르면 됩니다.');
+  } catch (e) {
+    setError(e.message || '오류가 발생했습니다.');
   }
-  await fetch(`${base}/${topicId}/${student.id}.json`, {
-    method: 'PUT', body: JSON.stringify({ name: student.name, grade: student.grade, ban: student.ban, num: student.num, ts: Date.now() }),
-  });
-  await loadAll();
 };
 
 (async function init() {
@@ -103,10 +127,25 @@ window.joinTopic = async function(topicId) {
   document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
   try {
     YEAR = await loadYear();
-    await loadAll();
-    setInterval(loadAll, 8000);
+    const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    const [adoptedRes, finalRes, prefRes] = await Promise.all([
+      fetch(`${base}/adopted.json`).then(r => r.json()),
+      fetch(`${base}/finalGroups/${student.id}.json`).then(r => r.json()),
+      fetch(`${base}/preferences/${student.id}.json`).then(r => r.json()),
+    ]);
+    adopted = adoptedRes || {};
+
+    if (finalRes) {
+      renderFinal(finalRes);
+      return;
+    }
+    if (!Object.keys(adopted).length) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 채택된 주제가 없습니다. 선생님이 채택할 때까지 기다려주세요.</div>';
+      return;
+    }
+    renderForm(prefRes);
   } catch (e) {
-    document.getElementById('topicList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
   }
 })();
 </script>

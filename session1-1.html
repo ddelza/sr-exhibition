@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>1차시 · 질문-가설 설계 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
+<style>
+.my-post { background: var(--bg); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.my-post-q { font-size: 0.9rem; font-weight: 700; margin: 0 0 4px; }
+.my-post-h { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; }
+.my-post-actions { display: flex; gap: 8px; }
+.count-note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+</style>
 </head>
 <body>
 
@@ -23,13 +30,18 @@
   </div>
 
   <div class="card">
-    <h2>① 질문 만들기</h2>
-    <p class="hint">자극과 반응(감각기관, 신경계, 호르몬 등)과 관련해서 궁금한 점을 질문 형태로 적어보자.</p>
-    <textarea id="question" placeholder="예) 손의 반응 속도는 훈련을 통해 빨라질 수 있을까?"></textarea>
+    <h2>내가 쓴 질문·가설 (최대 3개)</h2>
+    <p class="count-note" id="countNote">불러오는 중...</p>
+    <div id="myPostList"></div>
+    <button class="btn secondary" id="addBtn" onclick="onAddNew()">+ 새 질문·가설 추가하기</button>
   </div>
 
-  <div class="card">
-    <h2>② 가설 세우기</h2>
+  <div class="card" id="formCard" style="display:none">
+    <h2 id="formTitle">① 질문 만들기</h2>
+    <p class="hint">자극과 반응(감각기관, 신경계, 호르몬 등)과 관련해서 궁금한 점을 질문 형태로 적어보자.</p>
+    <textarea id="question" placeholder="예) 손의 반응 속도는 훈련을 통해 빨라질 수 있을까?"></textarea>
+
+    <h2 style="margin-top:18px">② 가설 세우기</h2>
     <p class="hint">좋은 가설의 조건을 참고해서, 독립변인·종속변인을 먼저 정하고 문장으로 정리해보자.</p>
     <div class="checklist">
       좋은 가설의 조건<br>
@@ -44,20 +56,27 @@
     <input type="text" id="dv" placeholder="예) 반응 시간(초)">
     <label class="field-label" for="hypothesis">가설 문장</label>
     <textarea id="hypothesis" placeholder="예) 훈련을 받은 사람은 훈련을 받지 않은 사람보다 반응 시간이 짧을 것이다."></textarea>
-  </div>
 
-  <div class="card">
     <div class="error-msg" id="formError"></div>
     <div class="ok-msg" id="formOk"></div>
     <button class="btn" id="submitBtn" onclick="onSubmit()">게시판에 올리기</button>
+    <button class="btn secondary" onclick="onCancelForm()">취소</button>
   </div>
 </div>
 
 <script src="session.js"></script>
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const MAX_POSTS = 3;
 let YEAR = null;
 const student = requireSrLogin();
+let myPosts = []; // [{postId, question, iv, dv, hypothesis, ts}]
+let editingId = null; // null이면 새 글 작성 모드
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function setError(msg) {
   const el = document.getElementById('formError');
@@ -78,18 +97,74 @@ async function loadYear() {
   return (cfg && cfg.year) || new Date().getFullYear();
 }
 
-async function loadExisting() {
-  const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${student.id}.json`);
-  const data = await res.json();
-  if (data) {
-    document.getElementById('question').value = data.question || '';
-    document.getElementById('iv').value = data.iv || '';
-    document.getElementById('dv').value = data.dv || '';
-    document.getElementById('hypothesis').value = data.hypothesis || '';
-    document.getElementById('submitBtn').textContent = '수정해서 다시 게시하기';
-    setOk('이미 게시한 내용이 있어 불러왔습니다. 수정 후 다시 올리면 게시판 내용도 함께 바뀝니다.');
-  }
+async function loadMyPosts() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts.json`);
+  const all = (await res.json()) || {};
+  myPosts = Object.entries(all)
+    .filter(([, p]) => p.id === student.id)
+    .map(([postId, p]) => ({ postId, ...p }))
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  renderMyPosts();
 }
+
+function renderMyPosts() {
+  document.getElementById('countNote').textContent = `${myPosts.length} / ${MAX_POSTS}개 작성함`;
+  document.getElementById('addBtn').style.display = myPosts.length >= MAX_POSTS ? 'none' : 'block';
+
+  const wrap = document.getElementById('myPostList');
+  if (!myPosts.length) {
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = myPosts.map(p => `<div class="my-post">
+    <div class="my-post-q">${esc(p.question)}</div>
+    <div class="my-post-h"><b>독립변인</b> ${esc(p.iv)} · <b>종속변인</b> ${esc(p.dv)}<br>${esc(p.hypothesis)}</div>
+    <div class="my-post-actions">
+      <button class="btn small secondary" onclick="onEdit('${p.postId}')">수정</button>
+      <button class="btn small danger-outline" onclick="onDelete('${p.postId}')">삭제</button>
+    </div>
+  </div>`).join('');
+}
+
+window.onAddNew = function() {
+  if (myPosts.length >= MAX_POSTS) return;
+  editingId = null;
+  document.getElementById('formTitle').textContent = '① 질문 만들기';
+  document.getElementById('question').value = '';
+  document.getElementById('iv').value = '';
+  document.getElementById('dv').value = '';
+  document.getElementById('hypothesis').value = '';
+  setError(''); setOk('');
+  document.getElementById('submitBtn').textContent = '게시판에 올리기';
+  document.getElementById('formCard').style.display = 'block';
+  document.getElementById('formCard').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.onEdit = function(postId) {
+  const p = myPosts.find(x => x.postId === postId);
+  if (!p) return;
+  editingId = postId;
+  document.getElementById('formTitle').textContent = '① 질문 수정하기';
+  document.getElementById('question').value = p.question || '';
+  document.getElementById('iv').value = p.iv || '';
+  document.getElementById('dv').value = p.dv || '';
+  document.getElementById('hypothesis').value = p.hypothesis || '';
+  setError(''); setOk('');
+  document.getElementById('submitBtn').textContent = '수정 내용 저장하기';
+  document.getElementById('formCard').style.display = 'block';
+  document.getElementById('formCard').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.onCancelForm = function() {
+  document.getElementById('formCard').style.display = 'none';
+};
+
+window.onDelete = async function(postId) {
+  if (!confirm('이 질문·가설을 삭제할까요? 게시판에서도 함께 사라집니다.')) return;
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${postId}.json`, { method: 'DELETE' });
+  if (editingId === postId) document.getElementById('formCard').style.display = 'none';
+  await loadMyPosts();
+};
 
 window.onSubmit = async function() {
   const question = document.getElementById('question').value.trim();
@@ -101,6 +176,7 @@ window.onSubmit = async function() {
   if (!question) { setError('질문을 입력해주세요.'); return; }
   if (!iv || !dv) { setError('독립변인과 종속변인을 모두 입력해주세요.'); return; }
   if (!hypothesis) { setError('가설 문장을 입력해주세요.'); return; }
+  if (!editingId && myPosts.length >= MAX_POSTS) { setError(`질문·가설은 최대 ${MAX_POSTS}개까지 작성할 수 있습니다.`); return; }
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -109,12 +185,19 @@ window.onSubmit = async function() {
       id: student.id, name: student.name, grade: student.grade, ban: student.ban, num: student.num,
       question, iv, dv, hypothesis, ts: Date.now(),
     };
-    const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${student.id}.json`, {
-      method: 'PUT', body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('게시 중 오류가 발생했습니다.');
-    setOk('게시판에 올렸습니다! 오른쪽 위 "게시판 보러가기"에서 확인하고, 다른 친구들 글에 좋아요·댓글도 남겨보세요.');
-    document.getElementById('submitBtn').textContent = '수정해서 다시 게시하기';
+    if (editingId) {
+      const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${editingId}.json`, {
+        method: 'PUT', body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('저장 중 오류가 발생했습니다.');
+    } else {
+      const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts.json`, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('게시 중 오류가 발생했습니다.');
+    }
+    document.getElementById('formCard').style.display = 'none';
+    await loadMyPosts();
   } catch (e) {
     setError(e.message || '오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
   } finally {
@@ -127,9 +210,9 @@ window.onSubmit = async function() {
   document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
   try {
     YEAR = await loadYear();
-    await loadExisting();
+    await loadMyPosts();
   } catch (e) {
-    setError('불러오기 실패: ' + (e.message || e));
+    document.getElementById('countNote').textContent = '불러오기 실패: ' + (e.message || e);
   }
 })();
 </script>

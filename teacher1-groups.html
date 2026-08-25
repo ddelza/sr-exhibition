@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모둠 배정 관리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 700px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.topic-row { background: var(--surface); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.topic-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.topic-row-top .name { font-weight: 700; font-size: 0.95rem; }
+.topic-row-top input { width: 70px; padding: 7px 8px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.88rem; text-align: center; }
+.pref-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 0.76rem; color: var(--text-muted); }
+.pref-cols .col-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.pref-cols div div { line-height: 1.6; }
+
+.result-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.result-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+.result-topic .members { font-size: 0.82rem; color: var(--text-muted); }
+.unassigned-box { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>👥 모둠 배정 관리 (교사용)</h1>
+    <p>반별로 지망 신청 현황을 보고, 모둠 정원을 정한 뒤 자동으로 배정합니다.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner"><span>모둠 배정 관리</span><a href="teacher1.html">게시글 채택 관리 →</a></div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <p class="hint">지망을 신청한 학생이 있는 반만 목록에 나타납니다. 모둠은 같은 반 학생끼리만 편성됩니다.</p>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div class="card">
+      <h2>모둠(주제)별 정원</h2>
+      <p class="hint">정원을 0으로 두면 이번 배정에서 제외됩니다. 아래 지망 신청자 목록은 선택한 반 기준입니다.</p>
+      <div id="topicSettings"></div>
+    </div>
+
+    <div class="card">
+      <button class="btn" onclick="runAssign()">이 반 자동 배정 실행</button>
+    </div>
+
+    <div id="resultWrap"></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'byung0703!';
+let YEAR = null;
+let adopted = {};
+let preferences = {}; // { studentId: {name,grade,ban,num,choice1,choice2,choice3,ts} }
+let capacities = {};
+let selectedBan = '';
+let lastResult = null; // { assigned: {studentId: topicId}, unassignedIds: [...] }
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const [a, p, cap] = await Promise.all([
+    fetch(`${base}/adopted.json`).then(r => r.json()),
+    fetch(`${base}/preferences.json`).then(r => r.json()),
+    fetch(`${base}/groupCapacity.json`).then(r => r.json()),
+  ]);
+  adopted = a || {};
+  preferences = p || {};
+  capacities = cap || {};
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(preferences).map(p => String(p.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 지망을 신청한 학생이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+function studentsInSelectedBan() {
+  return Object.entries(preferences)
+    .filter(([, p]) => String(p.ban) === selectedBan)
+    .map(([studentId, p]) => ({ studentId, ...p }));
+}
+
+function renderTopicSettings() {
+  const students = studentsInSelectedBan();
+  const wrap = document.getElementById('topicSettings');
+  const topicIds = Object.keys(adopted);
+  if (!topicIds.length) {
+    wrap.innerHTML = '<div class="empty-state">채택된 주제가 없습니다.</div>';
+    return;
+  }
+  wrap.innerHTML = topicIds.map(topicId => {
+    const byRank = r => students.filter(s => s['choice' + r] === topicId);
+    const col = (title, list) => `<div><div class="col-title">${title} (${list.length})</div>${list.map(s => `<div>${esc(s.ban)}반 ${esc(s.num)}번 ${esc(s.name)}</div>`).join('') || '<div>-</div>'}</div>`;
+    return `<div class="topic-row">
+      <div class="topic-row-top">
+        <span class="name">${esc(adopted[topicId].label)}</span>
+        <input type="number" min="0" id="cap-${topicId}" value="${capacities[topicId] || 0}">
+      </div>
+      <div class="pref-cols">
+        ${col('1지망', byRank(1))}
+        ${col('2지망', byRank(2))}
+        ${col('3지망', byRank(3))}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  document.getElementById('resultWrap').innerHTML = '';
+  lastResult = null;
+  renderTopicSettings();
+};
+
+async function saveCapacities() {
+  const topicIds = Object.keys(adopted);
+  const newCap = {};
+  topicIds.forEach(id => { newCap[id] = Number(document.getElementById('cap-' + id).value) || 0; });
+  capacities = newCap;
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/groupCapacity.json`, { method: 'PUT', body: JSON.stringify(newCap) });
+}
+
+// 1지망부터 순서대로, 제출 시각이 빠른 학생을 우선으로 정원 안에서 배정한다.
+// 그러고도 남은(어느 지망도 정원에 못 든) 학생은 자리가 남은 모둠에 순서대로 채운다.
+function assign(students, topicIds, cap) {
+  const remaining = {};
+  topicIds.forEach(t => { remaining[t] = cap[t] || 0; });
+  const assigned = {};
+  const pool = students.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+  [1, 2, 3].forEach(rank => {
+    const key = 'choice' + rank;
+    topicIds.forEach(topicId => {
+      pool.filter(s => !assigned[s.studentId] && s[key] === topicId).forEach(s => {
+        if (assigned[s.studentId]) return;
+        if (remaining[topicId] > 0) {
+          assigned[s.studentId] = topicId;
+          remaining[topicId]--;
+        }
+      });
+    });
+  });
+
+  let leftover = pool.filter(s => !assigned[s.studentId]);
+  topicIds.forEach(topicId => {
+    while (remaining[topicId] > 0 && leftover.length) {
+      const s = leftover.shift();
+      assigned[s.studentId] = topicId;
+      remaining[topicId]--;
+    }
+  });
+
+  const unassignedIds = pool.filter(s => !assigned[s.studentId]).map(s => s.studentId);
+  return { assigned, unassignedIds };
+}
+
+window.runAssign = async function() {
+  if (!selectedBan) return;
+  await saveCapacities();
+  const students = studentsInSelectedBan();
+  const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
+  lastResult = assign(students, topicIds, capacities);
+  renderResult(students);
+};
+
+function renderResult(students) {
+  const byId = {};
+  students.forEach(s => { byId[s.studentId] = s; });
+
+  const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
+  let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
+  topicIds.forEach(topicId => {
+    const members = Object.entries(lastResult.assigned)
+      .filter(([, t]) => t === topicId)
+      .map(([studentId]) => byId[studentId]);
+    html += `<div class="result-topic">
+      <div class="name">${esc(adopted[topicId].label)} (${members.length}/${capacities[topicId]}명)</div>
+      <div class="members">${members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ') || '-'}</div>
+    </div>`;
+  });
+  if (lastResult.unassignedIds.length) {
+    html += `<div class="unassigned-box">배정되지 못한 학생 (${lastResult.unassignedIds.length}명): ${lastResult.unassignedIds.map(id => `${esc(byId[id].num)}번 ${esc(byId[id].name)}`).join(', ')} — 정원을 늘리면 다시 배정할 수 있습니다.</div>`;
+  }
+  html += `<button class="btn" onclick="registerGroups()">이 반(${esc(selectedBan)}반) 모둠 등록하기</button>
+  <div class="ok-msg" id="registerOk"></div>
+  </div>`;
+  document.getElementById('resultWrap').innerHTML = html;
+}
+
+window.registerGroups = async function() {
+  if (!lastResult) return;
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups`;
+  const writes = Object.entries(lastResult.assigned).map(([studentId, topicId]) =>
+    fetch(`${base}/${studentId}.json`, {
+      method: 'PUT',
+      body: JSON.stringify({ topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() }),
+    })
+  );
+  await Promise.all(writes);
+  const ok = document.getElementById('registerOk');
+  if (ok) { ok.textContent = `${selectedBan}반 모둠이 등록되었습니다. 학생들은 모둠 신청 페이지에서 결과를 확인할 수 있습니다.`; ok.classList.add('show'); }
+};
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    renderBanSelect();
+    renderTopicSettings();
+  } catch (e) {
+    document.getElementById('topicSettings').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
