@@ -4,51 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
 <style>
-* { box-sizing: border-box; }
-:root {
-  --bg: #f5f6f8; --surface: #ffffff; --text: #1a1a1a; --text-muted: #888888;
-  --border: #d0d6e2; --accent: #1a6b5c; --accent-soft: #e3f2ee; --danger: #c0392b; --danger-soft: #fdecea;
-}
-body {
-  margin: 0; font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  background: var(--bg); color: var(--text);
-}
-.wrap { max-width: 520px; margin: 0 auto; padding: 24px 16px 60px; }
-.header { text-align: center; margin-bottom: 20px; }
-.header h1 { font-size: 1.25rem; margin: 0 0 4px; color: var(--accent); }
-.header p { font-size: 0.82rem; color: var(--text-muted); margin: 0; }
-
-.card { background: var(--surface); border-radius: 14px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.card h2 { font-size: 0.98rem; margin: 0 0 4px; color: var(--text); }
-.card .hint { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 12px; line-height: 1.5; }
-
-label.field-label { display: block; font-size: 0.82rem; font-weight: 700; color: var(--text); margin: 12px 0 6px; }
-label.field-label:first-child { margin-top: 0; }
-input[type=text], input[type=tel] {
-  width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 10px;
-  font-size: 0.95rem; font-family: inherit; background: var(--surface); color: var(--text); outline: none;
-}
-input:focus { border-color: var(--accent); }
-
-.btn {
-  width: 100%; padding: 13px; border: none; border-radius: 10px; background: var(--accent); color: #fff;
-  font-size: 0.95rem; font-weight: 700; cursor: pointer; margin-top: 16px;
-}
-.btn:disabled { opacity: 0.45; cursor: default; }
-
-.error-msg { font-size: 0.82rem; color: var(--danger); background: var(--danger-soft); border-radius: 8px; padding: 8px 10px; margin-top: 10px; display: none; }
-.error-msg.show { display: block; }
-
 .step { display: none; }
 .step.active { display: block; }
-
-.welcome-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 10px 14px;
-  font-size: 0.85rem; font-weight: 600; margin-bottom: 16px;
-}
-.welcome-banner button { background: none; border: none; color: var(--accent); font-size: 0.78rem; cursor: pointer; text-decoration: underline; font-weight: 400; padding: 0; }
 
 .session-card { background: var(--surface); border-radius: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; }
 .session-head {
@@ -67,8 +26,6 @@ input:focus { border-color: var(--accent); }
 }
 .activity-btn:active { opacity: 0.8; }
 .empty-note { font-size: 0.82rem; color: var(--text-muted); padding: 4px 0; }
-
-.loading-state { text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -95,7 +52,7 @@ input:focus { border-color: var(--accent); }
 
   <!-- STEP 2: 차시 목록 -->
   <div class="step" id="step-main">
-    <div class="welcome-banner">
+    <div class="who-banner">
       <span id="welcomeLabel"></span>
       <button onclick="onLogout()">다른 학생으로</button>
     </div>
@@ -113,7 +70,11 @@ const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 // 그 페이지에서 session.js의 requireSrLogin()을 호출하면 여기서 확인한 학번/이름을
 // 그대로 이어받는다.
 const SESSIONS = [
-  { title: '1차시', links: [] },
+  { title: '1차시 · 질문-가설 설계하기', links: [
+    { label: '① 질문·가설 만들어 게시하기', href: 'session1-1.html' },
+    { label: '② 게시판 둘러보기 (좋아요·댓글)', href: 'board.html' },
+    { label: '③ 모둠 신청하기', href: 'grouping.html' },
+  ] },
   { title: '2차시', links: [] },
   { title: '3차시', links: [] },
   { title: '4차시', links: [] },

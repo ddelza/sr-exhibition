@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1차시 관리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.post-row { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.post-row.adopted { border: 2px solid var(--accent); }
+.post-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.post-author { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.post-question { font-size: 0.95rem; font-weight: 700; margin: 0 0 8px; }
+.post-hypo { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px; }
+.like-count { font-size: 0.8rem; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.adopt-row { display: flex; gap: 8px; align-items: center; }
+.adopt-row input { flex: 1; padding: 8px 10px; font-size: 0.85rem; }
+.adopt-btn { padding: 8px 14px; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.adopt-btn.off { background: var(--accent-soft); color: var(--accent); }
+.adopt-btn.on { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🗂 1차시 관리 (교사용)</h1>
+    <p>좋아요 많은 순으로 정렬됩니다. 모둠 주제로 채택할 글에 이름을 붙여 채택하세요.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput" placeholder="비밀번호">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div id="postList"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'sr2026'; // 필요하면 이 값을 바꿔서 쓰세요.
+let YEAR = null;
+let posts = {}, likes = {}, adopted = {};
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const [p, l, a] = await Promise.all([
+    fetch(`${base}/posts.json`).then(r => r.json()),
+    fetch(`${base}/likes.json`).then(r => r.json()),
+    fetch(`${base}/adopted.json`).then(r => r.json()),
+  ]);
+  posts = p || {};
+  likes = l || {};
+  adopted = a || {};
+  render();
+}
+
+function render() {
+  const ids = Object.keys(posts).sort((a, b) => {
+    const la = Object.keys(likes[a] || {}).length;
+    const lb = Object.keys(likes[b] || {}).length;
+    if (la !== lb) return lb - la;
+    return (posts[a].ts || 0) - (posts[b].ts || 0);
+  });
+
+  const wrap = document.getElementById('postList');
+  if (!ids.length) {
+    wrap.innerHTML = '<div class="empty-state">아직 게시된 글이 없습니다.</div>';
+    return;
+  }
+
+  wrap.innerHTML = ids.map(postId => {
+    const post = posts[postId];
+    const likeCount = Object.keys(likes[postId] || {}).length;
+    const isAdopted = !!adopted[postId];
+    const label = isAdopted ? adopted[postId].label : post.question;
+    return `<div class="post-row${isAdopted ? ' adopted' : ''}">
+      <div class="post-top">
+        <div>
+          <div class="post-author">${esc(post.grade)}학년 ${esc(post.ban)}반 ${esc(post.num)}번 ${esc(post.name)}</div>
+          <div class="post-question">${esc(post.question)}</div>
+        </div>
+        <div class="like-count">❤️ ${likeCount}</div>
+      </div>
+      <div class="post-hypo"><b>독립변인</b> ${esc(post.iv)} · <b>종속변인</b> ${esc(post.dv)}<br>${esc(post.hypothesis)}</div>
+      <div class="adopt-row">
+        <input type="text" id="label-${postId}" placeholder="주제 이름" value="${esc(label)}">
+        <button class="adopt-btn ${isAdopted ? 'on' : 'off'}" onclick="toggleAdopt('${postId}')">${isAdopted ? '채택됨 ✓' : '채택하기'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.toggleAdopt = async function(postId) {
+  const url = `${DB_URL}/years/${YEAR}/exhibition/s1/adopted/${postId}.json`;
+  if (adopted[postId]) {
+    await fetch(url, { method: 'DELETE' });
+  } else {
+    const label = document.getElementById('label-' + postId).value.trim() || posts[postId].question;
+    await fetch(url, { method: 'PUT', body: JSON.stringify({ label, ts: Date.now() }) });
+  }
+  await loadAll();
+};
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('postList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>

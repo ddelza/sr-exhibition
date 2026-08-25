@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모둠 신청 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.topic-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.topic-card.mine { border: 2px solid var(--accent); }
+.topic-title { font-size: 1rem; font-weight: 700; margin: 0 0 8px; }
+.topic-count { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+.topic-members { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px; line-height: 1.6; }
+.join-btn { padding: 10px 16px; border: none; border-radius: 10px; font-size: 0.88rem; font-weight: 700; cursor: pointer; width: 100%; }
+.join-btn.off { background: var(--accent-soft); color: var(--accent); }
+.join-btn.on { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🙋 모둠 신청</h1>
+    <p>선생님이 채택한 주제 중 하나를 골라 참여해보세요. 다른 주제를 다시 누르면 신청이 바뀝니다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="topicList"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+let YEAR = null;
+const student = requireSrLogin();
+
+let adopted = {};
+let groups = {};
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const [a, g] = await Promise.all([
+    fetch(`${base}/adopted.json`).then(r => r.json()),
+    fetch(`${base}/groups.json`).then(r => r.json()),
+  ]);
+  adopted = a || {};
+  groups = g || {};
+  render();
+}
+
+function render() {
+  const ids = Object.keys(adopted);
+  const wrap = document.getElementById('topicList');
+  if (!ids.length) {
+    wrap.innerHTML = '<div class="empty-state">아직 채택된 주제가 없습니다. 선생님이 채택할 때까지 기다려주세요.</div>';
+    return;
+  }
+
+  const myTopicId = Object.keys(groups).find(id => groups[id][student.id]) || null;
+
+  wrap.innerHTML = ids.map(topicId => {
+    const members = Object.values(groups[topicId] || {});
+    const isMine = topicId === myTopicId;
+    return `<div class="topic-card${isMine ? ' mine' : ''}">
+      <div class="topic-title">${esc(adopted[topicId].label)}</div>
+      <div class="topic-count">${members.length}명 신청함</div>
+      <div class="topic-members">${members.map(m => esc(m.name)).join(', ')}</div>
+      <button class="join-btn ${isMine ? 'on' : 'off'}" onclick="joinTopic('${topicId}')">${isMine ? '신청됨 ✓' : '이 주제로 신청하기'}</button>
+    </div>`;
+  }).join('');
+}
+
+window.joinTopic = async function(topicId) {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/groups`;
+  // 기존에 다른 주제에 신청했었다면 그 자리를 먼저 지운다 (한 사람당 하나의 주제만).
+  const prevTopicId = Object.keys(groups).find(id => groups[id][student.id]);
+  if (prevTopicId && prevTopicId !== topicId) {
+    await fetch(`${base}/${prevTopicId}/${student.id}.json`, { method: 'DELETE' });
+  }
+  await fetch(`${base}/${topicId}/${student.id}.json`, {
+    method: 'PUT', body: JSON.stringify({ name: student.name, grade: student.grade, ban: student.ban, num: student.num, ts: Date.now() }),
+  });
+  await loadAll();
+};
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('topicList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

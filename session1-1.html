@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1차시 · 질문-가설 설계 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🔬 1차시 · 질문-가설 설계하기</h1>
+    <p>Ⅳ. 자극과 반응 단원과 관련된 질문을 만들고, 검증 가능한 가설을 세워보자.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <div class="links">
+      <a href="board.html" target="_blank" rel="noopener">게시판 보러가기 →</a>
+      <a href="index.html">메인으로</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>① 질문 만들기</h2>
+    <p class="hint">자극과 반응(감각기관, 신경계, 호르몬 등)과 관련해서 궁금한 점을 질문 형태로 적어보자.</p>
+    <textarea id="question" placeholder="예) 손의 반응 속도는 훈련을 통해 빨라질 수 있을까?"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>② 가설 세우기</h2>
+    <p class="hint">좋은 가설의 조건을 참고해서, 독립변인·종속변인을 먼저 정하고 문장으로 정리해보자.</p>
+    <div class="checklist">
+      좋은 가설의 조건<br>
+      ① 독립변인과 종속변인을 포함할 것<br>
+      ② 변수 간의 방향성 또는 관계를 서술할 것<br>
+      ③ 각 변인이 관찰·측정 가능할 것<br>
+      ④ 실험을 통해 검증 가능할 것
+    </div>
+    <label class="field-label" for="iv">독립변인 (내가 바꾸는 것)</label>
+    <input type="text" id="iv" placeholder="예) 훈련 여부(훈련 O / X)">
+    <label class="field-label" for="dv">종속변인 (그 결과로 측정하는 것)</label>
+    <input type="text" id="dv" placeholder="예) 반응 시간(초)">
+    <label class="field-label" for="hypothesis">가설 문장</label>
+    <textarea id="hypothesis" placeholder="예) 훈련을 받은 사람은 훈련을 받지 않은 사람보다 반응 시간이 짧을 것이다."></textarea>
+  </div>
+
+  <div class="card">
+    <div class="error-msg" id="formError"></div>
+    <div class="ok-msg" id="formOk"></div>
+    <button class="btn" id="submitBtn" onclick="onSubmit()">게시판에 올리기</button>
+  </div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+let YEAR = null;
+const student = requireSrLogin();
+
+function setError(msg) {
+  const el = document.getElementById('formError');
+  if (!msg) { el.classList.remove('show'); el.textContent = ''; return; }
+  el.textContent = msg; el.classList.add('show');
+  document.getElementById('formOk').classList.remove('show');
+}
+function setOk(msg) {
+  const el = document.getElementById('formOk');
+  if (!msg) { el.classList.remove('show'); el.textContent = ''; return; }
+  el.textContent = msg; el.classList.add('show');
+  document.getElementById('formError').classList.remove('show');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadExisting() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${student.id}.json`);
+  const data = await res.json();
+  if (data) {
+    document.getElementById('question').value = data.question || '';
+    document.getElementById('iv').value = data.iv || '';
+    document.getElementById('dv').value = data.dv || '';
+    document.getElementById('hypothesis').value = data.hypothesis || '';
+    document.getElementById('submitBtn').textContent = '수정해서 다시 게시하기';
+    setOk('이미 게시한 내용이 있어 불러왔습니다. 수정 후 다시 올리면 게시판 내용도 함께 바뀝니다.');
+  }
+}
+
+window.onSubmit = async function() {
+  const question = document.getElementById('question').value.trim();
+  const iv = document.getElementById('iv').value.trim();
+  const dv = document.getElementById('dv').value.trim();
+  const hypothesis = document.getElementById('hypothesis').value.trim();
+  setError('');
+
+  if (!question) { setError('질문을 입력해주세요.'); return; }
+  if (!iv || !dv) { setError('독립변인과 종속변인을 모두 입력해주세요.'); return; }
+  if (!hypothesis) { setError('가설 문장을 입력해주세요.'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  try {
+    const payload = {
+      id: student.id, name: student.name, grade: student.grade, ban: student.ban, num: student.num,
+      question, iv, dv, hypothesis, ts: Date.now(),
+    };
+    const res = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/posts/${student.id}.json`, {
+      method: 'PUT', body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('게시 중 오류가 발생했습니다.');
+    setOk('게시판에 올렸습니다! 오른쪽 위 "게시판 보러가기"에서 확인하고, 다른 친구들 글에 좋아요·댓글도 남겨보세요.');
+    document.getElementById('submitBtn').textContent = '수정해서 다시 게시하기';
+  } catch (e) {
+    setError(e.message || '오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
+  try {
+    YEAR = await loadYear();
+    await loadExisting();
+  } catch (e) {
+    setError('불러오기 실패: ' + (e.message || e));
+  }
+})();
+</script>
+</body>
+</html>
