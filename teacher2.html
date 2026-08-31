@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2차시 관리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 680px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.group-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 0.95rem; margin: 0 0 4px; }
+.group-card .members { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px; }
+.status-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.status-chip { font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.status-chip.done { background: #dcf5e3; color: #1a5c2e; }
+.status-chip.todo { background: var(--bg); color: var(--text-muted); }
+.feedback-row { display: flex; gap: 8px; align-items: flex-start; }
+.feedback-row textarea { flex: 1; min-height: 50px; padding: 8px 10px; font-size: 0.85rem; }
+.feedback-row button {
+  padding: 9px 14px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.saved-flash { color: var(--accent); font-size: 0.72rem; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🧪 2차시 관리 (교사용)</h1>
+    <p>반별로 각 모둠의 탐구 계획 작성 현황을 보고 피드백을 남기세요.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>2차시 관리</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a></div>
+    </div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div id="groupList"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'byung0703!';
+let YEAR = null;
+let finalGroups = {}, posts = {}, preferences = {}, plans = {}, steps = {}, feedbackAll = {};
+let selectedBan = '';
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
+  const [fg, p, pref, pl, st, fb] = await Promise.all([
+    fetch(`${s1}/finalGroups.json`).then(r => r.json()),
+    fetch(`${s1}/posts.json`).then(r => r.json()),
+    fetch(`${s1}/preferences.json`).then(r => r.json()),
+    fetch(`${s2}/plans.json`).then(r => r.json()),
+    fetch(`${s2}/steps.json`).then(r => r.json()),
+    fetch(`${s2}/feedback.json`).then(r => r.json()),
+  ]);
+  finalGroups = fg || {};
+  posts = p || {};
+  preferences = pref || {};
+  plans = pl || {};
+  steps = st || {};
+  feedbackAll = fb || {};
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(finalGroups).map(g => String(g.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 모둠이 배정된 반이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  render();
+};
+
+function memberLabel(studentId) {
+  const p = preferences[studentId];
+  return p ? `${esc(p.num)}번 ${esc(p.name)}` : esc(studentId);
+}
+
+function render() {
+  const wrap = document.getElementById('groupList');
+  const groups = {}; // topicId -> [studentId,...]
+  Object.entries(finalGroups).forEach(([sid, g]) => {
+    if (String(g.ban) !== selectedBan) return;
+    (groups[g.topicId] = groups[g.topicId] || []).push(sid);
+  });
+  const topicIds = Object.keys(groups);
+  if (!topicIds.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+    return;
+  }
+
+  wrap.innerHTML = topicIds.map(topicId => {
+    const post = posts[topicId] || {};
+    const plan = plans[topicId] || {};
+    const stepCount = Object.keys(steps[topicId] || {}).length;
+    const chip = (label, ok) => `<span class="status-chip ${ok ? 'done' : 'todo'}">${label} ${ok ? '✓' : '✗'}</span>`;
+    const fb = feedbackAll[topicId];
+
+    return `<div class="group-card">
+      <h2>${esc(post.question || topicId)}</h2>
+      <div class="members">${groups[topicId].map(memberLabel).join(', ')}</div>
+      <div class="status-row">
+        ${chip('준비물', !!(plan.materials && plan.materials.text))}
+        ${chip('통제변인', !!(plan.controlledVars && plan.controlledVars.text))}
+        <span class="status-chip ${stepCount ? 'done' : 'todo'}">실험과정 ${stepCount}단계</span>
+        ${chip('유의사항', !!(plan.precautions && plan.precautions.text))}
+      </div>
+      <div class="feedback-row">
+        <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>
+        <button onclick="saveFeedback('${topicId}')">저장</button>
+      </div>
+      <span class="saved-flash" id="flash-${topicId}"></span>
+    </div>`;
+  }).join('');
+}
+
+window.saveFeedback = async function(topicId) {
+  const text = document.getElementById('fb-' + topicId).value.trim();
+  const payload = { text, ts: Date.now() };
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s2/feedback/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  feedbackAll[topicId] = payload;
+  const flash = document.getElementById('flash-' + topicId);
+  if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
+};
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    renderBanSelect();
+    render();
+  } catch (e) {
+    document.getElementById('groupList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>

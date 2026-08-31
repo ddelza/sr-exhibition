@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2차시 · 탐구 계획 설계 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.feedback-banner { background: var(--accent); color: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.88rem; line-height: 1.5; }
+.feedback-banner b { display: block; font-size: 0.76rem; opacity: 0.85; margin-bottom: 4px; }
+
+.field-meta { font-size: 0.76rem; color: var(--text-muted); margin: 6px 0 0; }
+
+.step-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.step-row:last-of-type { border-bottom: none; }
+.step-row .step-text { flex: 1; }
+.step-row .step-author { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; }
+.step-row button { background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 0; white-space: nowrap; }
+.step-row button:hover { color: var(--accent); text-decoration: underline; }
+.step-edit-row { display: flex; gap: 6px; flex: 1; align-items: center; }
+.step-edit-row input { flex: 1; padding: 5px 8px; font-size: 0.85rem; }
+.step-edit-row button.save-btn { background: var(--accent); color: #fff; padding: 5px 10px; border-radius: 6px; }
+.step-add-row { display: flex; gap: 6px; margin-top: 10px; }
+.step-add-row input { flex: 1; padding: 9px 10px; font-size: 0.88rem; }
+.step-add-row button {
+  padding: 9px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🧪 2차시 · 탐구 계획 설계하기</h1>
+    <p>우리 모둠의 질문·가설을 검증할 실험을 함께 계획해보자. 누가 무엇을 적었는지 표시되니, 겹치지 않게 협업하자.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let base = null;
+let topicId = null;
+let post = {};
+let groupmates = [];
+let plans = {};
+let steps = {};
+let feedback = null;
+let editingStepId = null;
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function relTime(ts) {
+  if (!ts) return '';
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return '방금 전';
+  if (diff < 3600) return Math.floor(diff / 60) + '분 전';
+  if (diff < 86400) return Math.floor(diff / 3600) + '시간 전';
+  return Math.floor(diff / 86400) + '일 전';
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+// 포커스 중인 입력창은 폴링으로 다시 그려도 값이 안 날아가게, 렌더 전후로 포커스/값/커서를 보존한다.
+function withFocusPreserved(renderFn) {
+  const active = document.activeElement;
+  const id = active && active.id;
+  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+  const value = isTextInput ? active.value : null;
+  const selStart = isTextInput ? active.selectionStart : null;
+  const selEnd = isTextInput ? active.selectionEnd : null;
+  renderFn();
+  if (id) {
+    const el = document.getElementById(id);
+    if (el && isTextInput) {
+      el.value = value;
+      if (typeof selStart === 'number') { try { el.setSelectionRange(selStart, selEnd); } catch (e) {} }
+      el.focus();
+    }
+  }
+}
+
+async function loadAll() {
+  const [p, s, f] = await Promise.all([
+    fetch(`${base}/plans/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/steps/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/feedback/${topicId}.json`).then(r => r.json()),
+  ]);
+  plans = p || {};
+  steps = s || {};
+  feedback = f || null;
+  withFocusPreserved(render);
+}
+
+function fieldBlock(key, label, placeholder) {
+  const data = plans[key] || {};
+  const metaText = data.updatedAt ? `마지막 수정: ${esc(data.updatedBy || '')} · ${relTime(data.updatedAt)}` : '아직 아무도 작성하지 않았습니다.';
+  return `<div class="group-card">
+    <h2>${label}</h2>
+    <textarea id="field-${key}" placeholder="${placeholder}">${esc(data.text || '')}</textarea>
+    <div class="field-meta" id="meta-${key}">${metaText}</div>
+    <button class="btn small secondary" onclick="saveField('${key}')">저장</button>
+  </div>`;
+}
+
+window.saveField = async function(key) {
+  const input = document.getElementById('field-' + key);
+  const text = input.value.trim();
+  const payload = { text, updatedBy: student.name, updatedAt: Date.now() };
+  await fetch(`${base}/plans/${topicId}/${key}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  plans[key] = payload;
+  document.getElementById('meta-' + key).textContent = `마지막 수정: ${payload.updatedBy} · 방금 전`;
+};
+
+function stepsBlock() {
+  const list = Object.entries(steps).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+  const rows = list.map(([stepId, s], i) => {
+    const canEdit = student.isTeacher || s.addedBy === student.id;
+    if (editingStepId === stepId) {
+      return `<div class="step-row"><b>${i + 1}.</b>
+        <span class="step-edit-row">
+          <input type="text" id="editStep-${stepId}" value="${esc(s.text)}">
+          <button class="save-btn" onclick="saveStep('${stepId}')">저장</button>
+          <button onclick="cancelEditStep()">취소</button>
+        </span>
+      </div>`;
+    }
+    return `<div class="step-row">
+      <b>${i + 1}.</b>
+      <span class="step-text">${esc(s.text)}</span>
+      <span class="step-author">${esc(s.addedByName)}</span>
+      ${canEdit ? `<button onclick="startEditStep('${stepId}')">수정</button><button onclick="deleteStep('${stepId}')">삭제</button>` : ''}
+    </div>`;
+  }).join('') || '<div class="empty-state">아직 작성된 단계가 없습니다.</div>';
+
+  return `<div class="group-card">
+    <h2>실험 과정</h2>
+    ${rows}
+    <div class="step-add-row">
+      <input type="text" id="newStepInput" placeholder="새 단계 입력 후 추가">
+      <button onclick="addStep()">추가</button>
+    </div>
+  </div>`;
+}
+
+window.addStep = async function() {
+  const input = document.getElementById('newStepInput');
+  const text = input.value.trim();
+  if (!text) return;
+  await fetch(`${base}/steps/${topicId}.json`, {
+    method: 'POST', body: JSON.stringify({ text, addedBy: student.id, addedByName: student.name, ts: Date.now() }),
+  });
+  await loadAll();
+};
+
+window.startEditStep = function(stepId) {
+  editingStepId = stepId;
+  render();
+  const input = document.getElementById('editStep-' + stepId);
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+};
+
+window.cancelEditStep = function() {
+  editingStepId = null;
+  render();
+};
+
+window.saveStep = async function(stepId) {
+  const input = document.getElementById('editStep-' + stepId);
+  const text = input.value.trim();
+  if (!text) return;
+  const original = steps[stepId];
+  editingStepId = null;
+  await fetch(`${base}/steps/${topicId}/${stepId}.json`, {
+    method: 'PUT', body: JSON.stringify({ text, addedBy: original.addedBy, addedByName: original.addedByName, ts: original.ts }),
+  });
+  await loadAll();
+};
+
+window.deleteStep = async function(stepId) {
+  if (!confirm('이 단계를 삭제할까요?')) return;
+  await fetch(`${base}/steps/${topicId}/${stepId}.json`, { method: 'DELETE' });
+  await loadAll();
+};
+
+function render() {
+  const html = `
+    ${feedback && feedback.text ? `<div class="feedback-banner"><b>선생님 피드백</b>${esc(feedback.text)}</div>` : ''}
+
+    <div class="group-card">
+      <h2>${esc(post.question || '')}</h2>
+      <div class="post-hypo">
+        <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+        ${esc(post.hypothesis)}
+      </div>
+      <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+    </div>
+
+    ${fieldBlock('materials', '① 준비물', '실험에 필요한 준비물을 적어보자')}
+    ${fieldBlock('controlledVars', '② 통제변인', '독립변인·종속변인 말고, 실험 내내 똑같이 유지해야 할 조건들을 적어보자')}
+    ${stepsBlock()}
+    ${fieldBlock('precautions', '④ 안전·유의사항', '실험할 때 조심해야 할 점을 적어보자')}
+  `;
+  document.getElementById('content').innerHTML = html;
+
+  const newStepInput = document.getElementById('newStepInput');
+  if (newStepInput) newStepInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } });
+  if (editingStepId) {
+    const editInput = document.getElementById('editStep-' + editingStepId);
+    if (editInput) editInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); saveStep(editingStepId); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelEditStep(); }
+    });
+  }
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    base = `${DB_URL}/years/${YEAR}/exhibition/s2`;
+    const s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const [postRes, finalAllRes, prefAllRes] = await Promise.all([
+      fetch(`${s1base}/posts/${topicId}.json`).then(r => r.json()),
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+    ]);
+    post = postRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
