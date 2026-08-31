@@ -13,10 +13,22 @@
 .group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 2px solid transparent; }
 .group-card.mine { border-color: var(--accent); }
 .group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
-.group-card .members { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px; }
-.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 12px; }
 .post-hypo b { color: var(--accent); }
-.post-author { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
+.post-author { font-size: 0.76rem; color: var(--text-muted); margin: -6px 0 12px; }
+
+.assign-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.assign-table th, .assign-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.assign-table th { font-size: 0.74rem; color: var(--text-muted); font-weight: 700; }
+.assign-table tr:last-child td { border-bottom: none; }
+.assign-table tr.rank-1 { background: #dcf5e3; }
+.assign-table tr.rank-2 { background: #fff6d0; }
+.assign-table tr.rank-3 { background: var(--bg); }
+.assign-table tr.me td { font-weight: 700; }
+.rank-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
+.rank-badge.rank-1 { background: #a8e6b8; color: #1a5c2e; }
+.rank-badge.rank-2 { background: #ffe58a; color: #7a5c00; }
+.rank-badge.rank-3 { background: var(--border); color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -43,6 +55,14 @@ const student = requireSrLogin();
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function rankOfChoice(pref, topicId) {
+  if (!pref) return null;
+  if (pref.choice1 === topicId) return 1;
+  if (pref.choice2 === topicId) return 2;
+  if (pref.choice3 === topicId) return 3;
+  return null;
 }
 
 async function loadYear() {
@@ -73,12 +93,12 @@ async function loadYear() {
     }
 
     // 같은 반(ban) 학생들을 모둠(topicId)별로 묶는다
-    const groups = {}; // topicId -> [{studentId, num, name}]
+    const groups = {}; // topicId -> { label, members: [{studentId, num, name, rank}] }
     Object.entries(finalGroups).forEach(([sid, g]) => {
       if (String(g.ban) !== String(mine.ban)) return;
       const info = preferences[sid] || {};
       (groups[g.topicId] = groups[g.topicId] || { label: g.topicLabel, members: [] }).members.push({
-        num: info.num, name: info.name || sid,
+        studentId: sid, num: info.num, name: info.name || sid, rank: rankOfChoice(info, g.topicId),
       });
     });
 
@@ -91,15 +111,21 @@ async function loadYear() {
       const post = posts[topicId] || {};
       const isMine = topicId === mine.topicId;
       g.members.sort((a, b) => (a.num || 0) - (b.num || 0));
+      const rows = g.members.map(m => {
+        const rankLabel = m.rank ? `<span class="rank-badge rank-${m.rank}">${m.rank}지망</span>` : '';
+        return `<tr class="rank-${m.rank || ''}${m.studentId === student.id ? ' me' : ''}">
+          <td>${esc(m.num)}</td><td>${esc(m.name)}</td><td>${rankLabel}</td>
+        </tr>`;
+      }).join('');
       html += `<div class="group-card${isMine ? ' mine' : ''}">
         <h2>${esc(g.label)}${isMine ? ' (내 모둠)' : ''}</h2>
-        <div class="members">${g.members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ')}</div>
         ${post.question ? `<div class="post-hypo">
           <b>질문</b> ${esc(post.question)}<br>
           <b>독립변인</b> ${esc(post.iv)} · <b>종속변인</b> ${esc(post.dv)}<br>
           ${esc(post.hypothesis)}
         </div>
         <div class="post-author">제안한 학생: ${esc(post.num)}번 ${esc(post.name)}</div>` : ''}
+        <table class="assign-table"><thead><tr><th>번호</th><th>이름</th><th>지망</th></tr></thead><tbody>${rows}</tbody></table>
       </div>`;
     });
 
