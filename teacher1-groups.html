@@ -17,10 +17,19 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .pref-cols .col-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
 .pref-cols div div { line-height: 1.6; }
 
-.result-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.result-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
-.result-topic .members { font-size: 0.82rem; color: var(--text-muted); }
 .unassigned-box { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 8px; }
+
+.assign-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 4px; }
+.assign-table th, .assign-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.assign-table th { font-size: 0.76rem; color: var(--text-muted); font-weight: 700; }
+.assign-table td.topic-cell { font-weight: 600; }
+.assign-table tr.rank-1 { background: #dcf5e3; }
+.assign-table tr.rank-2 { background: #fff6d0; }
+.assign-table tr.rank-3 { background: var(--bg); }
+.rank-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
+.rank-badge.rank-1 { background: #a8e6b8; color: #1a5c2e; }
+.rank-badge.rank-2 { background: #ffe58a; color: #7a5c00; }
+.rank-badge.rank-3 { background: var(--border); color: var(--text-muted); }
 
 .submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
 .missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -421,24 +430,40 @@ window.runAssign = async function() {
   renderResult(students);
 };
 
+function rankOfChoice(student, topicId) {
+  if (student.choice1 === topicId) return 1;
+  if (student.choice2 === topicId) return 2;
+  if (student.choice3 === topicId) return 3;
+  return null;
+}
+
 function renderResult(students) {
   const byId = {};
   students.forEach(s => { byId[s.studentId] = s; });
 
   const adopted = currentAdopted();
   const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
-  let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
-  topicIds.forEach(topicId => {
+
+  const rows = topicIds.flatMap(topicId => {
     const members = Object.entries(lastResult.assigned)
       .filter(([, t]) => t === topicId)
-      .map(([studentId]) => byId[studentId]);
-    const author = authorLine(topicId);
-    html += `<div class="result-topic">
-      ${author ? `<div class="topic-author">${author}</div>` : ''}
-      <div class="name">${esc(adopted[topicId].label)} (${members.length}/${capacities[topicId]}명)</div>
-      <div class="members">${members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ') || '-'}</div>
-    </div>`;
+      .map(([studentId]) => byId[studentId])
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+    return members.map((m, i) => ({ topicId, member: m, isFirstOfTopic: i === 0, count: members.length }));
   });
+
+  let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
+  html += '<table class="assign-table"><thead><tr><th>모둠(주제)</th><th>번호</th><th>이름</th><th>지망</th></tr></thead><tbody>';
+  html += rows.map(r => {
+    const rank = rankOfChoice(r.member, r.topicId);
+    const rankLabel = rank ? `<span class="rank-badge rank-${rank}">${rank}지망</span>` : '';
+    const topicCell = r.isFirstOfTopic
+      ? `<td class="topic-cell" rowspan="${r.count}">${esc(adopted[r.topicId].label)} (${r.count}/${capacities[r.topicId]}명)</td>`
+      : '';
+    return `<tr class="rank-${rank || ''}">${topicCell}<td>${esc(r.member.num)}</td><td>${esc(r.member.name)}</td><td>${rankLabel}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">배정된 학생이 없습니다.</td></tr>';
+  html += '</tbody></table>';
+
   if (lastResult.unassignedIds.length) {
     html += `<div class="unassigned-box">배정되지 못한 학생 (${lastResult.unassignedIds.length}명): ${lastResult.unassignedIds.map(id => `${esc(byId[id].num)}번 ${esc(byId[id].name)}`).join(', ')} — 정원을 늘리면 다시 배정할 수 있습니다.</div>`;
   }
