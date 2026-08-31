@@ -64,6 +64,8 @@
 <script src="session.js"></script>
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const TEACHER_ID = '3000';
+const TEACHER_NAME = '김병선';
 
 // 차시별 활동 목록 — 활동이 준비되면 links 배열에 { label, href } 형태로 추가하면 된다.
 // href는 같은 저장소 안의 다른 html 파일 경로(예: 'session1-1.html')를 넣으면 되고,
@@ -138,6 +140,12 @@ window.onLogin = async function() {
   btn.disabled = true; btn.textContent = '확인 중...';
   try {
     const cfg = await loadCurrentConfig();
+    if (id === TEACHER_ID && name === TEACHER_NAME) {
+      const teacher = { id, name, isTeacher: true };
+      setSrStudent(teacher);
+      enterMain(cfg, teacher);
+      return;
+    }
     const res = await fetch(`${DB_URL}/years/${cfg.year}/students/${id}.json`);
     if (!res.ok) throw new Error('학생 명단을 불러오지 못했습니다.');
     const rec = await res.json();
@@ -164,7 +172,7 @@ window.onLogout = function() {
 
 function enterMain(cfg, student) {
   document.getElementById('semLabel').textContent = `${cfg.year}학년도 ${cfg.sem}학기`;
-  document.getElementById('welcomeLabel').textContent = `✓ ${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}님`;
+  document.getElementById('welcomeLabel').textContent = `✓ ${srWhoLabel(student)}${student.isTeacher ? '' : '님'}`;
   renderSessions();
   showStep('step-main');
 }

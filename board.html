@@ -18,6 +18,11 @@
   width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--accent-soft);
   color: var(--accent); font-size: 0.85rem; font-weight: 700; cursor: pointer;
 }
+.scope-row select {
+  width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--accent-soft);
+  color: var(--accent); font-size: 0.85rem; font-weight: 700; font-family: inherit;
+}
+.teacher-tag { color: var(--accent); font-weight: 700; }
 
 .post-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .post-author { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
@@ -61,9 +66,7 @@
     </div>
   </div>
 
-  <div class="scope-row">
-    <button class="scope-btn" id="scopeBtn" onclick="toggleScope()"></button>
-  </div>
+  <div class="scope-row" id="scopeRow"></div>
 
   <div class="sort-row">
     <button class="sort-btn active" id="sortLikeBtn" onclick="setSort('like')">좋아요 많은 순</button>
@@ -76,6 +79,7 @@
 <script src="session.js"></script>
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const TEACHER_ID = '3000';
 let YEAR = null;
 const student = requireSrLogin();
 
@@ -83,7 +87,8 @@ let posts = {};
 let likes = {};
 let comments = {};
 let sortMode = 'like';
-let viewScope = 'ban'; // 'ban' = 우리 반만, 'all' = 전체 학급
+let viewScope = 'ban'; // 'ban' = 우리 반만, 'all' = 전체 학급 (일반 학생용)
+let teacherBan = ''; // 교사 계정이 선택한 반 ('' = 전체)
 let drafts = {}; // 새로고침 도중 입력 중이던 댓글 내용을 유지
 
 function esc(str) {
@@ -112,7 +117,11 @@ async function loadAll() {
 
 function sortedPostIds() {
   let ids = Object.keys(posts);
-  if (viewScope === 'ban') ids = ids.filter(id => String(posts[id].ban) === String(student.ban));
+  if (student.isTeacher) {
+    if (teacherBan) ids = ids.filter(id => String(posts[id].ban) === String(teacherBan));
+  } else if (viewScope === 'ban') {
+    ids = ids.filter(id => String(posts[id].ban) === String(student.ban));
+  }
   if (sortMode === 'like') {
     ids.sort((a, b) => {
       const la = Object.keys(likes[a] || {}).length;
@@ -138,17 +147,32 @@ window.toggleScope = function() {
   render();
 };
 
-function renderScopeBtn() {
-  const btn = document.getElementById('scopeBtn');
-  btn.textContent = viewScope === 'ban'
-    ? `🔭 전체 학급 구경하기`
-    : `← 우리 반만 보기 (${esc(student.ban)}반)`;
+window.onTeacherBanChange = function() {
+  teacherBan = document.getElementById('teacherBanSelect').value;
+  render();
+};
+
+function renderScopeControl() {
+  const wrap = document.getElementById('scopeRow');
+  if (student.isTeacher) {
+    const bans = [...new Set(Object.values(posts).map(p => String(p.ban)))].sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+    wrap.innerHTML = `<select id="teacherBanSelect" onchange="onTeacherBanChange()">
+      <option value=""${!teacherBan ? ' selected' : ''}>전체 학급 보기</option>
+      ${bans.map(b => `<option value="${esc(b)}"${b === teacherBan ? ' selected' : ''}>${esc(b)}반만 보기</option>`).join('')}
+    </select>`;
+  } else {
+    wrap.innerHTML = `<button class="scope-btn" id="scopeBtn" onclick="toggleScope()">${
+      viewScope === 'ban' ? '🔭 전체 학급 구경하기' : `← 우리 반만 보기 (${esc(student.ban)}반)`
+    }</button>`;
+  }
 }
 
 function render() {
-  renderScopeBtn();
+  renderScopeControl();
   const ids = sortedPostIds();
-  const scopeLabel = viewScope === 'ban' ? `${student.ban}반` : '전체 학급';
+  const scopeLabel = student.isTeacher
+    ? (teacherBan ? `${teacherBan}반` : '전체 학급')
+    : (viewScope === 'ban' ? `${student.ban}반` : '전체 학급');
   document.getElementById('countLabel').textContent = `${scopeLabel} 질문·가설 ${ids.length}개`;
 
   // 입력 중인 댓글 초안을 잃지 않도록 저장해뒀다가 다시 채워 넣는다
@@ -167,7 +191,7 @@ function render() {
     const postLikes = likes[postId] || {};
     const likeCount = Object.keys(postLikes).length;
     const iLiked = !!postLikes[student.id];
-    const likeNames = Object.values(postLikes).map(l => l.name).join(', ');
+    const likeNames = Object.values(postLikes).map(l => l.name + (l.id === TEACHER_ID ? ' (교사)' : '')).join(', ');
     const postComments = comments[postId] ? Object.entries(comments[postId]).sort((a, b) => (a[1].ts||0) - (b[1].ts||0)) : [];
 
     return `<div class="post-card">
@@ -182,7 +206,7 @@ function render() {
         <span class="like-names">${esc(likeNames)}</span>
       </div>
       <div class="comment-list">
-        ${postComments.map(([, c]) => `<div class="comment-row"><b>${esc(c.name)}</b> ${esc(c.text)}</div>`).join('')}
+        ${postComments.map(([, c]) => `<div class="comment-row"><b>${esc(c.name)}${c.id === TEACHER_ID ? ' <span class="teacher-tag">(교사)</span>' : ''}</b> ${esc(c.text)}</div>`).join('')}
       </div>
       <div class="comment-input-row">
         <input type="text" placeholder="댓글 달기" data-post-id="${postId}" id="c-${postId}" value="${esc(drafts[postId] || '')}">
@@ -203,7 +227,7 @@ window.toggleLike = async function(postId) {
   if (already) {
     await fetch(url, { method: 'DELETE' });
   } else {
-    await fetch(url, { method: 'PUT', body: JSON.stringify({ name: student.name, ts: Date.now() }) });
+    await fetch(url, { method: 'PUT', body: JSON.stringify({ id: student.id, name: student.name, ts: Date.now() }) });
   }
   await loadAll();
 };
@@ -221,7 +245,7 @@ window.addComment = async function(postId) {
 
 (async function init() {
   if (!student) return;
-  document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
   try {
     YEAR = await loadYear();
     await loadAll();

@@ -53,7 +53,7 @@ async function loadYear() {
 
 (async function init() {
   if (!student) return;
-  document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
   try {
     const YEAR = await loadYear();
     const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
