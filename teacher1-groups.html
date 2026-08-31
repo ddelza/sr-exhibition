@@ -338,6 +338,12 @@ window.runAssign = async function() {
   const students = studentsInSelectedBan();
   const adopted = currentAdopted();
   const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
+  if (!topicIds.length) {
+    document.getElementById('resultWrap').innerHTML =
+      '<div class="error-msg show">모든 모둠의 정원이 0입니다. 위 "모둠(주제)별 정원"에 최소 하나 이상 인원 수를 입력한 뒤 다시 실행해주세요.</div>';
+    lastResult = null;
+    return;
+  }
   lastResult = assign(students, topicIds, capacities);
   renderResult(students);
 };
