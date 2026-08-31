@@ -19,6 +19,7 @@
 .adopt-btn { padding: 8px 14px; border: none; border-radius: 8px; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .adopt-btn.off { background: var(--accent-soft); color: var(--accent); }
 .adopt-btn.on { background: var(--accent); color: #fff; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
 </style>
 </head>
 <body>
@@ -40,6 +41,11 @@
   </div>
 
   <div class="step" id="step-main" style="display:none">
+    <div class="card">
+      <h2>반 선택</h2>
+      <p class="hint">채택은 반별로 이루어집니다. 아래 목록도 선택한 반 학생의 글만 보여줍니다.</p>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
     <div id="postList"><div class="loading-state">불러오는 중...</div></div>
   </div>
 </div>
@@ -48,7 +54,8 @@
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 let YEAR = null;
-let posts = {}, likes = {}, adopted = {};
+let posts = {}, likes = {}, adoptedAll = {}; // adoptedAll: { [ban]: { [postId]: {label, ts} } }
+let selectedBan = '';
 
 function esc(str) {
   if (!str) return '';
@@ -85,21 +92,47 @@ async function loadAll() {
   ]);
   posts = p || {};
   likes = l || {};
-  adopted = a || {};
+  adoptedAll = a || {};
+  renderBanSelect();
   render();
 }
 
+function bansAvailable() {
+  const set = new Set(Object.values(posts).map(p => String(p.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 게시된 글이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  render();
+};
+
 function render() {
-  const ids = Object.keys(posts).sort((a, b) => {
-    const la = Object.keys(likes[a] || {}).length;
-    const lb = Object.keys(likes[b] || {}).length;
-    if (la !== lb) return lb - la;
-    return (posts[a].ts || 0) - (posts[b].ts || 0);
-  });
+  const adopted = adoptedAll[selectedBan] || {};
+  const ids = Object.keys(posts)
+    .filter(id => String(posts[id].ban) === selectedBan)
+    .sort((a, b) => {
+      const la = Object.keys(likes[a] || {}).length;
+      const lb = Object.keys(likes[b] || {}).length;
+      if (la !== lb) return lb - la;
+      return (posts[a].ts || 0) - (posts[b].ts || 0);
+    });
 
   const wrap = document.getElementById('postList');
   if (!ids.length) {
-    wrap.innerHTML = '<div class="empty-state">아직 게시된 글이 없습니다.</div>';
+    wrap.innerHTML = '<div class="empty-state">이 반에는 아직 게시된 글이 없습니다.</div>';
     return;
   }
 
@@ -126,7 +159,8 @@ function render() {
 }
 
 window.toggleAdopt = async function(postId) {
-  const url = `${DB_URL}/years/${YEAR}/exhibition/s1/adopted/${postId}.json`;
+  const url = `${DB_URL}/years/${YEAR}/exhibition/s1/adopted/${selectedBan}/${postId}.json`;
+  const adopted = adoptedAll[selectedBan] || {};
   if (adopted[postId]) {
     await fetch(url, { method: 'DELETE' });
   } else {

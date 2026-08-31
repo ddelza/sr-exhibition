@@ -129,7 +129,7 @@ window.onSubmitPref = async function() {
     YEAR = await loadYear();
     const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
     const [adoptedRes, finalRes, prefRes] = await Promise.all([
-      fetch(`${base}/adopted.json`).then(r => r.json()),
+      fetch(`${base}/adopted/${student.ban}.json`).then(r => r.json()),
       fetch(`${base}/finalGroups/${student.id}.json`).then(r => r.json()),
       fetch(`${base}/preferences/${student.id}.json`).then(r => r.json()),
     ]);

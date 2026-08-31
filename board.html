@@ -13,6 +13,11 @@
   color: var(--text-muted); font-size: 0.84rem; font-weight: 600; cursor: pointer;
 }
 .sort-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.scope-row { margin-bottom: 10px; }
+.scope-btn {
+  width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--accent); background: var(--accent-soft);
+  color: var(--accent); font-size: 0.85rem; font-weight: 700; cursor: pointer;
+}
 
 .post-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .post-author { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
@@ -56,6 +61,10 @@
     </div>
   </div>
 
+  <div class="scope-row">
+    <button class="scope-btn" id="scopeBtn" onclick="toggleScope()"></button>
+  </div>
+
   <div class="sort-row">
     <button class="sort-btn active" id="sortLikeBtn" onclick="setSort('like')">좋아요 많은 순</button>
     <button class="sort-btn" id="sortTimeBtn" onclick="setSort('time')">최신순</button>
@@ -74,6 +83,7 @@ let posts = {};
 let likes = {};
 let comments = {};
 let sortMode = 'like';
+let viewScope = 'ban'; // 'ban' = 우리 반만, 'all' = 전체 학급
 let drafts = {}; // 새로고침 도중 입력 중이던 댓글 내용을 유지
 
 function esc(str) {
@@ -101,7 +111,8 @@ async function loadAll() {
 }
 
 function sortedPostIds() {
-  const ids = Object.keys(posts);
+  let ids = Object.keys(posts);
+  if (viewScope === 'ban') ids = ids.filter(id => String(posts[id].ban) === String(student.ban));
   if (sortMode === 'like') {
     ids.sort((a, b) => {
       const la = Object.keys(likes[a] || {}).length;
@@ -122,9 +133,23 @@ window.setSort = function(mode) {
   render();
 };
 
+window.toggleScope = function() {
+  viewScope = viewScope === 'ban' ? 'all' : 'ban';
+  render();
+};
+
+function renderScopeBtn() {
+  const btn = document.getElementById('scopeBtn');
+  btn.textContent = viewScope === 'ban'
+    ? `🔭 전체 학급 구경하기`
+    : `← 우리 반만 보기 (${esc(student.ban)}반)`;
+}
+
 function render() {
+  renderScopeBtn();
   const ids = sortedPostIds();
-  document.getElementById('countLabel').textContent = `${ids.length}개의 질문·가설이 올라와 있습니다`;
+  const scopeLabel = viewScope === 'ban' ? `${student.ban}반` : '전체 학급';
+  document.getElementById('countLabel').textContent = `${scopeLabel} 질문·가설 ${ids.length}개`;
 
   // 입력 중인 댓글 초안을 잃지 않도록 저장해뒀다가 다시 채워 넣는다
   document.querySelectorAll('.comment-input-row input').forEach(inp => {
