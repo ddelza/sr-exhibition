@@ -60,7 +60,7 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, plans = {}, steps = {}, feedbackAll = {};
+let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {};
 let selectedBan = '';
 
 function esc(str) {
@@ -92,19 +92,17 @@ async function loadYear() {
 async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
-  const [fg, p, pref, pl, st, fb] = await Promise.all([
+  const [fg, p, pref, it, fb] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
-    fetch(`${s2}/plans.json`).then(r => r.json()),
-    fetch(`${s2}/steps.json`).then(r => r.json()),
+    fetch(`${s2}/items.json`).then(r => r.json()),
     fetch(`${s2}/feedback.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
   preferences = pref || {};
-  plans = pl || {};
-  steps = st || {};
+  itemsAll = it || {};
   feedbackAll = fb || {};
 }
 
@@ -148,21 +146,24 @@ function render() {
     return;
   }
 
+  const FIELD_LABELS = [
+    ['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'],
+    ['steps', '실험과정'], ['precautions', '유의사항'],
+  ];
+
   wrap.innerHTML = topicIds.map(topicId => {
     const post = posts[topicId] || {};
-    const plan = plans[topicId] || {};
-    const stepCount = Object.keys(steps[topicId] || {}).length;
-    const chip = (label, ok) => `<span class="status-chip ${ok ? 'done' : 'todo'}">${label} ${ok ? '✓' : '✗'}</span>`;
+    const groupItems = itemsAll[topicId] || {};
     const fb = feedbackAll[topicId];
 
     return `<div class="group-card">
       <h2>${esc(post.question || topicId)}</h2>
       <div class="members">${groups[topicId].map(memberLabel).join(', ')}</div>
       <div class="status-row">
-        ${chip('준비물', !!(plan.materials && plan.materials.text))}
-        ${chip('통제변인', !!(plan.controlledVars && plan.controlledVars.text))}
-        <span class="status-chip ${stepCount ? 'done' : 'todo'}">실험과정 ${stepCount}단계</span>
-        ${chip('유의사항', !!(plan.precautions && plan.precautions.text))}
+        ${FIELD_LABELS.map(([key, label]) => {
+          const n = Object.keys(groupItems[key] || {}).length;
+          return `<span class="status-chip ${n ? 'done' : 'todo'}">${label} ${n}개</span>`;
+        }).join('')}
       </div>
       <div class="feedback-row">
         <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>

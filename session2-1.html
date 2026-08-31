@@ -17,12 +17,11 @@
 .feedback-banner { background: var(--accent); color: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.88rem; line-height: 1.5; }
 .feedback-banner b { display: block; font-size: 0.76rem; opacity: 0.85; margin-bottom: 4px; }
 
-.field-meta { font-size: 0.76rem; color: var(--text-muted); margin: 6px 0 0; }
-
-.step-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.step-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
 .step-row:last-of-type { border-bottom: none; }
 .step-row .step-text { flex: 1; }
-.step-row .step-author { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; }
+.step-row .item-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+.step-row .step-btns { display: flex; gap: 8px; }
 .step-row button { background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 0; white-space: nowrap; }
 .step-row button:hover { color: var(--accent); text-decoration: underline; }
 .step-edit-row { display: flex; gap: 6px; flex: 1; align-items: center; }
@@ -41,7 +40,7 @@
 <div class="wrap">
   <div class="header">
     <h1>🧪 2차시 · 탐구 계획 설계하기</h1>
-    <p>우리 모둠의 질문·가설을 검증할 실험을 함께 계획해보자. 누가 무엇을 적었는지 표시되니, 겹치지 않게 협업하자.</p>
+    <p>우리 모둠의 질문·가설을 검증할 실험을 함께 계획해보자. 모둠원 누구나 자유롭게 추가·수정할 수 있고, 항목마다 작성자와 최종 수정자가 표시된다.</p>
   </div>
 
   <div class="who-banner">
@@ -61,23 +60,21 @@ let base = null;
 let topicId = null;
 let post = {};
 let groupmates = [];
-let plans = {};
-let steps = {};
+let items = {}; // { [fieldKey]: { [itemId]: {text, author, authorName, lastEditor, lastEditorName, createdAt, updatedAt} } }
 let feedback = null;
-let editingStepId = null;
+let editingItemKey = null; // `${fieldKey}:${itemId}`
+
+const FIELD_DEFS = [
+  { key: 'materials', label: '① 준비물', placeholder: '준비물을 하나씩 입력 후 추가', numbered: false },
+  { key: 'measurement', label: '② 변인 측정 방법', placeholder: '독립변인·종속변인을 어떻게 관찰·측정할지 입력 후 추가', numbered: false },
+  { key: 'controlledVars', label: '③ 통제변인', placeholder: '실험 내내 똑같이 유지해야 할 조건을 입력 후 추가', numbered: false },
+  { key: 'steps', label: '④ 실험 과정', placeholder: '새 단계 입력 후 추가', numbered: true },
+  { key: 'precautions', label: '⑤ 안전·유의사항', placeholder: '조심해야 할 점을 입력 후 추가', numbered: false },
+];
 
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function relTime(ts) {
-  if (!ts) return '';
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return '방금 전';
-  if (diff < 3600) return Math.floor(diff / 60) + '분 전';
-  if (diff < 86400) return Math.floor(diff / 3600) + '시간 전';
-  return Math.floor(diff / 86400) + '일 전';
 }
 
 async function loadYear() {
@@ -106,105 +103,103 @@ function withFocusPreserved(renderFn) {
 }
 
 async function loadAll() {
-  const [p, s, f] = await Promise.all([
-    fetch(`${base}/plans/${topicId}.json`).then(r => r.json()),
-    fetch(`${base}/steps/${topicId}.json`).then(r => r.json()),
+  const [it, f] = await Promise.all([
+    fetch(`${base}/items/${topicId}.json`).then(r => r.json()),
     fetch(`${base}/feedback/${topicId}.json`).then(r => r.json()),
   ]);
-  plans = p || {};
-  steps = s || {};
+  items = it || {};
   feedback = f || null;
   withFocusPreserved(render);
 }
 
-function fieldBlock(key, label, placeholder) {
-  const data = plans[key] || {};
-  const metaText = data.updatedAt ? `마지막 수정: ${esc(data.updatedBy || '')} · ${relTime(data.updatedAt)}` : '아직 아무도 작성하지 않았습니다.';
-  return `<div class="group-card">
-    <h2>${label}</h2>
-    <textarea id="field-${key}" placeholder="${placeholder}">${esc(data.text || '')}</textarea>
-    <div class="field-meta" id="meta-${key}">${metaText}</div>
-    <button class="btn small secondary" onclick="saveField('${key}')">저장</button>
+function itemMetaText(it) {
+  const author = `작성자: ${esc(it.authorName)}`;
+  return it.lastEditor && it.lastEditor !== it.author ? `${author} · 최종수정자: ${esc(it.lastEditorName)}` : author;
+}
+
+function itemRow(fieldKey, itemId, it, num, numbered) {
+  const editKey = fieldKey + ':' + itemId;
+  if (editingItemKey === editKey) {
+    return `<div class="step-row">${numbered ? `<b>${num}.</b>` : ''}
+      <span class="step-edit-row">
+        <input type="text" id="editItem-${fieldKey}-${itemId}" value="${esc(it.text)}">
+        <button class="save-btn" onclick="saveEditItem('${fieldKey}', '${itemId}')">저장</button>
+        <button onclick="cancelEditItem()">취소</button>
+      </span>
+    </div>`;
+  }
+  return `<div class="step-row">
+    ${numbered ? `<b>${num}.</b>` : ''}
+    <span class="step-text">${esc(it.text)}<div class="item-meta">${itemMetaText(it)}</div></span>
+    <span class="step-btns">
+      <button onclick="startEditItem('${fieldKey}', '${itemId}')">수정</button>
+      <button onclick="deleteItem('${fieldKey}', '${itemId}')">삭제</button>
+    </span>
   </div>`;
 }
 
-window.saveField = async function(key) {
-  const input = document.getElementById('field-' + key);
-  const text = input.value.trim();
-  const payload = { text, updatedBy: student.name, updatedAt: Date.now() };
-  await fetch(`${base}/plans/${topicId}/${key}.json`, { method: 'PUT', body: JSON.stringify(payload) });
-  plans[key] = payload;
-  document.getElementById('meta-' + key).textContent = `마지막 수정: ${payload.updatedBy} · 방금 전`;
-};
-
-function stepsBlock() {
-  const list = Object.entries(steps).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
-  const rows = list.map(([stepId, s], i) => {
-    const canEdit = student.isTeacher || s.addedBy === student.id;
-    if (editingStepId === stepId) {
-      return `<div class="step-row"><b>${i + 1}.</b>
-        <span class="step-edit-row">
-          <input type="text" id="editStep-${stepId}" value="${esc(s.text)}">
-          <button class="save-btn" onclick="saveStep('${stepId}')">저장</button>
-          <button onclick="cancelEditStep()">취소</button>
-        </span>
-      </div>`;
-    }
-    return `<div class="step-row">
-      <b>${i + 1}.</b>
-      <span class="step-text">${esc(s.text)}</span>
-      <span class="step-author">${esc(s.addedByName)}</span>
-      ${canEdit ? `<button onclick="startEditStep('${stepId}')">수정</button><button onclick="deleteStep('${stepId}')">삭제</button>` : ''}
-    </div>`;
-  }).join('') || '<div class="empty-state">아직 작성된 단계가 없습니다.</div>';
-
+function itemsBlock(def) {
+  const list = Object.entries(items[def.key] || {}).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+  const rows = list.map(([itemId, it], i) => itemRow(def.key, itemId, it, i + 1, def.numbered)).join('')
+    || '<div class="empty-state">아직 작성된 내용이 없습니다.</div>';
   return `<div class="group-card">
-    <h2>실험 과정</h2>
+    <h2>${def.label}</h2>
     ${rows}
     <div class="step-add-row">
-      <input type="text" id="newStepInput" placeholder="새 단계 입력 후 추가">
-      <button onclick="addStep()">추가</button>
+      <input type="text" id="newItem-${def.key}" placeholder="${def.placeholder}">
+      <button onclick="addItem('${def.key}')">추가</button>
     </div>
   </div>`;
 }
 
-window.addStep = async function() {
-  const input = document.getElementById('newStepInput');
+window.addItem = async function(fieldKey) {
+  const input = document.getElementById('newItem-' + fieldKey);
   const text = input.value.trim();
   if (!text) return;
-  await fetch(`${base}/steps/${topicId}.json`, {
-    method: 'POST', body: JSON.stringify({ text, addedBy: student.id, addedByName: student.name, ts: Date.now() }),
+  const now = Date.now();
+  await fetch(`${base}/items/${topicId}/${fieldKey}.json`, {
+    method: 'POST',
+    body: JSON.stringify({
+      text, author: student.id, authorName: student.name,
+      lastEditor: student.id, lastEditorName: student.name,
+      createdAt: now, updatedAt: now,
+    }),
   });
   await loadAll();
 };
 
-window.startEditStep = function(stepId) {
-  editingStepId = stepId;
+window.startEditItem = function(fieldKey, itemId) {
+  editingItemKey = fieldKey + ':' + itemId;
   render();
-  const input = document.getElementById('editStep-' + stepId);
+  const input = document.getElementById(`editItem-${fieldKey}-${itemId}`);
   if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 };
 
-window.cancelEditStep = function() {
-  editingStepId = null;
+window.cancelEditItem = function() {
+  editingItemKey = null;
   render();
 };
 
-window.saveStep = async function(stepId) {
-  const input = document.getElementById('editStep-' + stepId);
+window.saveEditItem = async function(fieldKey, itemId) {
+  const input = document.getElementById(`editItem-${fieldKey}-${itemId}`);
   const text = input.value.trim();
   if (!text) return;
-  const original = steps[stepId];
-  editingStepId = null;
-  await fetch(`${base}/steps/${topicId}/${stepId}.json`, {
-    method: 'PUT', body: JSON.stringify({ text, addedBy: original.addedBy, addedByName: original.addedByName, ts: original.ts }),
+  const original = items[fieldKey][itemId];
+  editingItemKey = null;
+  await fetch(`${base}/items/${topicId}/${fieldKey}/${itemId}.json`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      text, author: original.author, authorName: original.authorName,
+      lastEditor: student.id, lastEditorName: student.name,
+      createdAt: original.createdAt, updatedAt: Date.now(),
+    }),
   });
   await loadAll();
 };
 
-window.deleteStep = async function(stepId) {
-  if (!confirm('이 단계를 삭제할까요?')) return;
-  await fetch(`${base}/steps/${topicId}/${stepId}.json`, { method: 'DELETE' });
+window.deleteItem = async function(fieldKey, itemId) {
+  if (!confirm('삭제할까요?')) return;
+  await fetch(`${base}/items/${topicId}/${fieldKey}/${itemId}.json`, { method: 'DELETE' });
   await loadAll();
 };
 
@@ -221,20 +216,20 @@ function render() {
       <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
     </div>
 
-    ${fieldBlock('materials', '① 준비물', '실험에 필요한 준비물을 적어보자')}
-    ${fieldBlock('controlledVars', '② 통제변인', '독립변인·종속변인 말고, 실험 내내 똑같이 유지해야 할 조건들을 적어보자')}
-    ${stepsBlock()}
-    ${fieldBlock('precautions', '④ 안전·유의사항', '실험할 때 조심해야 할 점을 적어보자')}
+    ${FIELD_DEFS.map(itemsBlock).join('')}
   `;
   document.getElementById('content').innerHTML = html;
 
-  const newStepInput = document.getElementById('newStepInput');
-  if (newStepInput) newStepInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } });
-  if (editingStepId) {
-    const editInput = document.getElementById('editStep-' + editingStepId);
+  FIELD_DEFS.forEach(def => {
+    const input = document.getElementById('newItem-' + def.key);
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addItem(def.key); } });
+  });
+  if (editingItemKey) {
+    const [fieldKey, itemId] = editingItemKey.split(':');
+    const editInput = document.getElementById(`editItem-${fieldKey}-${itemId}`);
     if (editInput) editInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); saveStep(editingStepId); }
-      if (e.key === 'Escape') { e.preventDefault(); cancelEditStep(); }
+      if (e.key === 'Enter') { e.preventDefault(); saveEditItem(fieldKey, itemId); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelEditItem(); }
     });
   }
 }
