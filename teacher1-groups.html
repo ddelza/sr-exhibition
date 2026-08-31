@@ -20,6 +20,12 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .result-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
 .result-topic .members { font-size: 0.82rem; color: var(--text-muted); }
 .unassigned-box { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 8px; }
+
+.current-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.current-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; }
+.member-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 0.85rem; }
+.member-row select { font-size: 0.8rem; padding: 5px 6px; }
+.member-row .saved-flash { color: var(--accent); font-size: 0.72rem; }
 </style>
 </head>
 <body>
@@ -49,6 +55,12 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
     </div>
 
     <div class="card">
+      <h2>현재 등록된 모둠</h2>
+      <p class="hint">이미 등록된 모둠입니다. 드롭다운으로 학생을 다른 모둠으로 옮기거나 모둠에서 뺄 수 있습니다 (선택 즉시 저장).</p>
+      <div id="currentGroups"></div>
+    </div>
+
+    <div class="card">
       <h2>모둠(주제)별 정원</h2>
       <p class="hint">정원을 0으로 두면 이번 배정에서 제외됩니다. 아래 지망 신청자 목록은 선택한 반 기준입니다.</p>
       <div id="topicSettings"></div>
@@ -68,6 +80,7 @@ const PASSWORD = 'byung0703!';
 let YEAR = null;
 let adopted = {};
 let preferences = {}; // { studentId: {name,grade,ban,num,choice1,choice2,choice3,ts} }
+let finalGroups = {}; // { studentId: {topicId, topicLabel, ban, ts} }
 let capacities = {};
 let selectedBan = '';
 let lastResult = null; // { assigned: {studentId: topicId}, unassignedIds: [...] }
@@ -100,20 +113,74 @@ async function loadYear() {
 
 async function loadAll() {
   const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
-  const [a, p, cap] = await Promise.all([
+  const [a, p, cap, fg] = await Promise.all([
     fetch(`${base}/adopted.json`).then(r => r.json()),
     fetch(`${base}/preferences.json`).then(r => r.json()),
     fetch(`${base}/groupCapacity.json`).then(r => r.json()),
+    fetch(`${base}/finalGroups.json`).then(r => r.json()),
   ]);
   adopted = a || {};
   preferences = p || {};
   capacities = cap || {};
+  finalGroups = fg || {};
 }
 
 function bansAvailable() {
-  const set = new Set(Object.values(preferences).map(p => String(p.ban)));
+  const set = new Set([
+    ...Object.values(preferences).map(p => String(p.ban)),
+    ...Object.values(finalGroups).map(g => String(g.ban)),
+  ]);
   return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
 }
+
+function memberLabel(studentId) {
+  const p = preferences[studentId];
+  return p ? `${esc(p.num)}번 ${esc(p.name)}` : esc(studentId);
+}
+
+function renderCurrentGroups() {
+  const wrap = document.getElementById('currentGroups');
+  const entries = Object.entries(finalGroups).filter(([, g]) => String(g.ban) === selectedBan);
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+    return;
+  }
+  const byTopic = {};
+  entries.forEach(([sid, g]) => { (byTopic[g.topicId] = byTopic[g.topicId] || []).push(sid); });
+
+  const topicOptions = (currentId) => Object.keys(adopted).map(id =>
+    `<option value="${id}"${id === currentId ? ' selected' : ''}>${esc(adopted[id].label)}</option>`
+  ).join('') + `<option value=""${!currentId ? ' selected' : ''}>— 모둠에서 빼기 —</option>`;
+
+  wrap.innerHTML = Object.entries(byTopic).map(([topicId, sids]) => {
+    const label = adopted[topicId] ? adopted[topicId].label : (finalGroups[sids[0]].topicLabel || '(삭제된 주제)');
+    return `<div class="current-topic">
+      <div class="name">${esc(label)} (${sids.length}명)</div>
+      ${sids.map(sid => `<div class="member-row">
+        <span>${memberLabel(sid)}</span>
+        <span>
+          <select onchange="onMoveMember('${sid}', this.value)">${topicOptions(topicId)}</select>
+          <span class="saved-flash" id="flash-${sid}"></span>
+        </span>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+window.onMoveMember = async function(studentId, newTopicId) {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups/${studentId}.json`;
+  if (!newTopicId) {
+    await fetch(base, { method: 'DELETE' });
+    delete finalGroups[studentId];
+  } else {
+    const payload = { topicId: newTopicId, topicLabel: adopted[newTopicId].label, ban: selectedBan, ts: Date.now() };
+    await fetch(base, { method: 'PUT', body: JSON.stringify(payload) });
+    finalGroups[studentId] = payload;
+  }
+  const flash = document.getElementById('flash-' + studentId);
+  if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
+  renderCurrentGroups();
+};
 
 function renderBanSelect() {
   const bans = bansAvailable();
@@ -162,6 +229,7 @@ window.onBanChange = function() {
   selectedBan = document.getElementById('banSelect').value;
   document.getElementById('resultWrap').innerHTML = '';
   lastResult = null;
+  renderCurrentGroups();
   renderTopicSettings();
 };
 
@@ -243,15 +311,15 @@ function renderResult(students) {
 window.registerGroups = async function() {
   if (!lastResult) return;
   const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups`;
-  const writes = Object.entries(lastResult.assigned).map(([studentId, topicId]) =>
-    fetch(`${base}/${studentId}.json`, {
-      method: 'PUT',
-      body: JSON.stringify({ topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() }),
-    })
-  );
+  const writes = Object.entries(lastResult.assigned).map(([studentId, topicId]) => {
+    const payload = { topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() };
+    finalGroups[studentId] = payload;
+    return fetch(`${base}/${studentId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  });
   await Promise.all(writes);
   const ok = document.getElementById('registerOk');
   if (ok) { ok.textContent = `${selectedBan}반 모둠이 등록되었습니다. 학생들은 모둠 신청 페이지에서 결과를 확인할 수 있습니다.`; ok.classList.add('show'); }
+  renderCurrentGroups();
 };
 
 async function init() {
@@ -259,6 +327,7 @@ async function init() {
     YEAR = await loadYear();
     await loadAll();
     renderBanSelect();
+    renderCurrentGroups();
     renderTopicSettings();
   } catch (e) {
     document.getElementById('topicSettings').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>우리 반 모둠 확인 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.mine-card { background: var(--accent); color: #fff; border-radius: 14px; padding: 18px 20px; text-align: center; margin-bottom: 16px; }
+.mine-card .label { font-size: 0.8rem; opacity: 0.85; margin-bottom: 4px; }
+.mine-card .topic { font-size: 1.15rem; font-weight: 700; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 2px solid transparent; }
+.group-card.mine { border-color: var(--accent); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.group-card .members { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px; }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; }
+.post-hypo b { color: var(--accent); }
+.post-author { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>👥 우리 반 모둠 확인</h1>
+    <p>같은 반 친구들이 어떤 모둠으로 배정됐는지, 각 모둠의 질문·가설은 무엇인지 확인해보자.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = `${student.grade}학년 ${student.ban}반 ${student.num}번 ${student.name}`;
+  try {
+    const YEAR = await loadYear();
+    const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    const [finalAll, prefAll, postsAll] = await Promise.all([
+      fetch(`${base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${base}/preferences.json`).then(r => r.json()),
+      fetch(`${base}/posts.json`).then(r => r.json()),
+    ]);
+    const finalGroups = finalAll || {};
+    const preferences = prefAll || {};
+    const posts = postsAll || {};
+
+    const mine = finalGroups[student.id];
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 우리 반 모둠이 등록되지 않았습니다. 선생님이 등록하면 여기서 확인할 수 있어요.</div>';
+      return;
+    }
+
+    // 같은 반(ban) 학생들을 모둠(topicId)별로 묶는다
+    const groups = {}; // topicId -> [{studentId, num, name}]
+    Object.entries(finalGroups).forEach(([sid, g]) => {
+      if (String(g.ban) !== String(mine.ban)) return;
+      const info = preferences[sid] || {};
+      (groups[g.topicId] = groups[g.topicId] || { label: g.topicLabel, members: [] }).members.push({
+        num: info.num, name: info.name || sid,
+      });
+    });
+
+    let html = `<div class="mine-card">
+      <div class="label">내 모둠</div>
+      <div class="topic">${esc(mine.topicLabel)}</div>
+    </div>`;
+
+    Object.entries(groups).forEach(([topicId, g]) => {
+      const post = posts[topicId] || {};
+      const isMine = topicId === mine.topicId;
+      g.members.sort((a, b) => (a.num || 0) - (b.num || 0));
+      html += `<div class="group-card${isMine ? ' mine' : ''}">
+        <h2>${esc(g.label)}${isMine ? ' (내 모둠)' : ''}</h2>
+        <div class="members">${g.members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ')}</div>
+        ${post.question ? `<div class="post-hypo">
+          <b>질문</b> ${esc(post.question)}<br>
+          <b>독립변인</b> ${esc(post.iv)} · <b>종속변인</b> ${esc(post.dv)}<br>
+          ${esc(post.hypothesis)}
+        </div>
+        <div class="post-author">제안한 학생: ${esc(post.num)}번 ${esc(post.name)}</div>` : ''}
+      </div>`;
+    });
+
+    document.getElementById('content').innerHTML = html;
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
