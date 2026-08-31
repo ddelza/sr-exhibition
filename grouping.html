@@ -6,12 +6,20 @@
 <title>모둠 신청 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
 <style>
+.wrap { max-width: 640px; }
 .final-card { background: var(--accent); color: #fff; border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 14px; }
 .final-card .label { font-size: 0.82rem; opacity: 0.85; margin-bottom: 4px; }
 .final-card .topic { font-size: 1.15rem; font-weight: 700; }
 select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; background: var(--surface); color: var(--text); }
-.topic-preview-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-.topic-preview-item:last-child { border-bottom: none; }
+
+.topic-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 2px solid transparent; }
+.topic-card.ranked { border-color: var(--accent); }
+.post-author { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
+.post-question { font-size: 1rem; font-weight: 700; margin: 0 0 10px; line-height: 1.4; }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 12px; }
+.post-hypo b { color: var(--accent); }
+.rank-row { display: flex; align-items: center; gap: 8px; }
+.rank-row select { width: auto; flex: 1; }
 </style>
 </head>
 <body>
@@ -19,7 +27,7 @@ select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); bor
 <div class="wrap">
   <div class="header">
     <h1>🙋 모둠 신청</h1>
-    <p>채택된 주제 중 1~3지망을 골라 신청하세요. 선생님이 지망을 참고해서 모둠을 배정합니다.</p>
+    <p>채택된 질문·가설을 보고 1~3지망을 골라 신청하세요. 선생님이 지망을 참고해서 모둠을 배정합니다.</p>
   </div>
 
   <div class="who-banner">
@@ -35,9 +43,11 @@ select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); bor
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 let YEAR = null;
 const student = requireSrLogin();
+let posts = {};
 let adopted = {};
 let adoptedAll = {}; // 교사 계정 미리보기용: { [ban]: { [postId]: {label, ts} } }
 let teacherBan = '';
+let rankOf = {}; // topicId -> 1|2|3 (학생 신청 폼 상태)
 
 function esc(str) {
   if (!str) return '';
@@ -50,10 +60,23 @@ async function loadYear() {
   return (cfg && cfg.year) || new Date().getFullYear();
 }
 
-function topicOptions(selectedId) {
-  return '<option value="">선택 안 함</option>' + Object.entries(adopted).map(([id, t]) =>
-    `<option value="${id}"${id === selectedId ? ' selected' : ''}>${esc(t.label)}</option>`
-  ).join('');
+function sortedTopicIds(topics) {
+  return Object.keys(topics).sort((a, b) => (topics[a].ts || 0) - (topics[b].ts || 0));
+}
+
+function topicCardHtml(topicId, label, rankControlHtml) {
+  const post = posts[topicId];
+  const body = post
+    ? `<div class="post-question">${esc(post.question)}</div>
+       <div class="post-hypo">
+         <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+         ${esc(post.hypothesis)}
+       </div>`
+    : `<div class="post-question">${esc(label)}</div>`;
+  return `<div class="topic-card${rankOf[topicId] ? ' ranked' : ''}">
+    ${body}
+    ${rankControlHtml || ''}
+  </div>`;
 }
 
 function renderFinal(final) {
@@ -71,18 +94,16 @@ function renderTeacherPreview() {
     ? bans.map(b => `<option value="${esc(b)}"${b === teacherBan ? ' selected' : ''}>${esc(b)}반</option>`).join('')
     : '<option value="">채택된 반이 없습니다</option>';
 
+  const cardsHtml = sortedTopicIds(topics).map(id => topicCardHtml(id, topics[id].label, '')).join('')
+    || '<div class="empty-state">이 반은 아직 채택된 주제가 없습니다.</div>';
+
   document.getElementById('content').innerHTML = `
     <div class="card">
       <h2>반 선택 (교사 미리보기)</h2>
-      <p class="hint">교사 계정은 학생 대신 신청할 수 없고, 반별로 채택된 주제만 미리 볼 수 있습니다.</p>
+      <p class="hint">교사 계정은 학생 대신 신청할 수 없고, 반별로 채택된 질문·가설을 미리 볼 수 있습니다.</p>
       <select id="teacherBanSelect" onchange="onTeacherBanChange()">${banOptionsHtml}</select>
     </div>
-    <div class="card">
-      <h2>${teacherBan ? esc(teacherBan) + '반 채택 주제' : '채택 주제'}</h2>
-      ${Object.keys(topics).length
-        ? Object.values(topics).map(t => `<div class="topic-preview-item">${esc(t.label)}</div>`).join('')
-        : '<div class="empty-state">이 반은 아직 채택된 주제가 없습니다.</div>'}
-    </div>`;
+    ${cardsHtml}`;
 }
 
 window.onTeacherBanChange = function() {
@@ -90,23 +111,31 @@ window.onTeacherBanChange = function() {
   renderTeacherPreview();
 };
 
-function renderForm(existingPref) {
-  const c1 = existingPref ? existingPref.choice1 : '';
-  const c2 = existingPref ? existingPref.choice2 : '';
-  const c3 = existingPref ? existingPref.choice3 : '';
+function rankSelectHtml(topicId) {
+  const current = rankOf[topicId] || '';
+  const opt = (v, label) => `<option value="${v}"${String(current) === String(v) ? ' selected' : ''}>${label}</option>`;
+  return `<div class="rank-row">
+    <span class="field-label" style="margin:0">지망</span>
+    <select onchange="onRankChange('${topicId}', this.value)">
+      ${opt('', '선택 안 함')}${opt('1', '1지망')}${opt('2', '2지망')}${opt('3', '3지망')}
+    </select>
+  </div>`;
+}
+
+window.onRankChange = function(topicId, value) {
+  const rank = value ? Number(value) : null;
+  delete rankOf[topicId];
+  if (rank) {
+    Object.keys(rankOf).forEach(tid => { if (rankOf[tid] === rank) delete rankOf[tid]; });
+    rankOf[topicId] = rank;
+  }
+  renderForm();
+};
+
+function renderForm() {
+  const cardsHtml = sortedTopicIds(adopted).map(id => topicCardHtml(id, adopted[id].label, rankSelectHtml(id))).join('');
   document.getElementById('content').innerHTML = `
-    <div class="card">
-      <h2>1지망</h2>
-      <select id="choice1">${topicOptions(c1)}</select>
-    </div>
-    <div class="card">
-      <h2>2지망</h2>
-      <select id="choice2">${topicOptions(c2)}</select>
-    </div>
-    <div class="card">
-      <h2>3지망</h2>
-      <select id="choice3">${topicOptions(c3)}</select>
-    </div>
+    ${cardsHtml}
     <div class="card">
       <div class="error-msg" id="prefError"></div>
       <div class="ok-msg" id="prefOk"></div>
@@ -128,14 +157,12 @@ function setOk(msg) {
 }
 
 window.onSubmitPref = async function() {
-  const choice1 = document.getElementById('choice1').value;
-  const choice2 = document.getElementById('choice2').value;
-  const choice3 = document.getElementById('choice3').value;
   setError('');
+  const choice1 = Object.keys(rankOf).find(id => rankOf[id] === 1) || '';
+  const choice2 = Object.keys(rankOf).find(id => rankOf[id] === 2) || '';
+  const choice3 = Object.keys(rankOf).find(id => rankOf[id] === 3) || '';
 
   if (!choice1) { setError('1지망은 반드시 선택해주세요.'); return; }
-  const picked = [choice1, choice2, choice3].filter(Boolean);
-  if (new Set(picked).size !== picked.length) { setError('같은 주제를 여러 지망에 중복해서 고를 수 없습니다.'); return; }
 
   try {
     const payload = {
@@ -158,10 +185,10 @@ window.onSubmitPref = async function() {
   try {
     YEAR = await loadYear();
     const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    posts = (await fetch(`${base}/posts.json`).then(r => r.json())) || {};
 
     if (student.isTeacher) {
-      const res = await fetch(`${base}/adopted.json`);
-      adoptedAll = (await res.json()) || {};
+      adoptedAll = (await fetch(`${base}/adopted.json`).then(r => r.json())) || {};
       const bans = Object.keys(adoptedAll).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
       teacherBan = bans[0] || '';
       renderTeacherPreview();
@@ -183,7 +210,12 @@ window.onSubmitPref = async function() {
       document.getElementById('content').innerHTML = '<div class="empty-state">아직 채택된 주제가 없습니다. 선생님이 채택할 때까지 기다려주세요.</div>';
       return;
     }
-    renderForm(prefRes);
+    if (prefRes) {
+      if (prefRes.choice1 && adopted[prefRes.choice1]) rankOf[prefRes.choice1] = 1;
+      if (prefRes.choice2 && adopted[prefRes.choice2]) rankOf[prefRes.choice2] = 2;
+      if (prefRes.choice3 && adopted[prefRes.choice3]) rankOf[prefRes.choice3] = 3;
+    }
+    renderForm();
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
   }
