@@ -40,8 +40,11 @@
 .like-names { font-size: 0.75rem; color: var(--text-muted); flex: 1; }
 
 .comment-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.comment-row { font-size: 0.83rem; line-height: 1.5; }
+.comment-row { display: flex; align-items: baseline; gap: 6px; font-size: 0.83rem; line-height: 1.5; }
+.comment-row .comment-text { flex: 1; }
 .comment-row b { color: var(--accent); font-weight: 700; }
+.comment-del-btn { background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 0; white-space: nowrap; }
+.comment-del-btn:hover { color: var(--danger); text-decoration: underline; }
 .comment-input-row { display: flex; gap: 6px; }
 .comment-input-row input { flex: 1; padding: 8px 10px; font-size: 0.85rem; }
 .comment-input-row button {
@@ -206,7 +209,14 @@ function render() {
         <span class="like-names">${esc(likeNames)}</span>
       </div>
       <div class="comment-list">
-        ${postComments.map(([, c]) => `<div class="comment-row"><b>${esc(c.name)}${c.id === TEACHER_ID ? ' <span class="teacher-tag">(교사)</span>' : ''}</b> ${esc(c.text)}</div>`).join('')}
+        ${postComments.map(([commentId, c]) => {
+          const canDelete = student.isTeacher || c.id === student.id;
+          return `<div class="comment-row">
+            <b>${esc(c.name)}${c.id === TEACHER_ID ? ' <span class="teacher-tag">(교사)</span>' : ''}</b>
+            <span class="comment-text">${esc(c.text)}</span>
+            ${canDelete ? `<button class="comment-del-btn" onclick="deleteComment('${postId}', '${commentId}')">삭제</button>` : ''}
+          </div>`;
+        }).join('')}
       </div>
       <div class="comment-input-row">
         <input type="text" placeholder="댓글 달기" data-post-id="${postId}" id="c-${postId}" value="${esc(drafts[postId] || '')}">
@@ -229,6 +239,12 @@ window.toggleLike = async function(postId) {
   } else {
     await fetch(url, { method: 'PUT', body: JSON.stringify({ id: student.id, name: student.name, ts: Date.now() }) });
   }
+  await loadAll();
+};
+
+window.deleteComment = async function(postId, commentId) {
+  if (!confirm('댓글을 삭제할까요?')) return;
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/comments/${postId}/${commentId}.json`, { method: 'DELETE' });
   await loadAll();
 };
 
