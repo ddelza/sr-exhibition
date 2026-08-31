@@ -298,37 +298,97 @@ async function saveCapacities() {
   await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/groupCapacity.json`, { method: 'PUT', body: JSON.stringify(newCap) });
 }
 
-// 1지망부터 순서대로, 제출 시각이 빠른 학생을 우선으로 정원 안에서 배정한다.
-// 그러고도 남은(어느 지망도 정원에 못 든) 학생은 자리가 남은 모둠에 순서대로 채운다.
+// 배정 원칙 (사용자와 합의한 순서):
+//  1) 학생이 신청하지 않은 주제에는 절대 배정하지 않는다.
+//  2) 1지망 또는 2지망 안에서 배정되는 인원을 최대한 많게 한다.
+//  3) 2)를 만족하는 배정들 중에서, 1지망으로 배정되는 인원이 최대가 되게 한다.
+//
+// 1·2지망만으로 그래프를 만들고(1원칙 — 3지망/미신청 주제로는 애초에 간선을 만들지 않음),
+// 1지망 간선 비용 0, 2지망 간선 비용 1로 최소비용 최대유량(min-cost max-flow)을 구하면
+// "유량(=배정 인원) 최대화 → 그 안에서 비용(=2지망 사용) 최소화"라는 알고리즘 자체의 정의가
+// 그대로 2)·3) 원칙이 된다. 단순히 지망 순서대로 그리디하게 확정하면(이전 방식) 먼저 신청한
+// 학생이 자리를 선점해 전체 배정 인원이 오히려 줄어드는 경우가 있어서 이 방식으로 바꿨다.
+//
+// 1·2지망으로 배정되지 못한 학생은, 3지망 주제에 남은 자리가 있으면(1·2지망 결과는 그대로 두고
+// 남는 자리만 사용) 그 자리에 한해 채운다. 그래도 안 되면 미배정으로 남긴다.
 function assign(students, topicIds, cap) {
-  const remaining = {};
-  topicIds.forEach(t => { remaining[t] = cap[t] || 0; });
-  const assigned = {};
-  const pool = students.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const n = students.length;
+  const m = topicIds.length;
+  const S = 0, T = n + m + 1;
+  const studentNode = i => 1 + i;
+  const topicNode = j => 1 + n + j;
+  const topicIndex = {};
+  topicIds.forEach((id, j) => { topicIndex[id] = j; });
 
-  [1, 2, 3].forEach(rank => {
-    const key = 'choice' + rank;
-    topicIds.forEach(topicId => {
-      pool.filter(s => !assigned[s.studentId] && s[key] === topicId).forEach(s => {
-        if (assigned[s.studentId]) return;
-        if (remaining[topicId] > 0) {
-          assigned[s.studentId] = topicId;
-          remaining[topicId]--;
+  const graph = Array.from({ length: n + m + 2 }, () => []);
+  function addEdge(u, v, capacity, cost) {
+    graph[u].push({ to: v, cap: capacity, cost, other: graph[v].length });
+    graph[v].push({ to: u, cap: 0, cost: -cost, other: graph[u].length - 1 });
+  }
+
+  students.forEach((s, i) => {
+    addEdge(S, studentNode(i), 1, 0);
+    if (s.choice1 && topicIndex[s.choice1] !== undefined) addEdge(studentNode(i), topicNode(topicIndex[s.choice1]), 1, 0);
+    if (s.choice2 && topicIndex[s.choice2] !== undefined) addEdge(studentNode(i), topicNode(topicIndex[s.choice2]), 1, 1);
+  });
+  topicIds.forEach((id, j) => addEdge(topicNode(j), T, cap[id] || 0, 0));
+
+  // SPFA 기반 최소비용 최대유량. 그래프가 작아서(학생 수십 명, 주제 몇 개) 이 정도로 충분하다.
+  while (true) {
+    const dist = new Array(graph.length).fill(Infinity);
+    const inQueue = new Array(graph.length).fill(false);
+    const prevNode = new Array(graph.length).fill(-1);
+    const prevEdge = new Array(graph.length).fill(-1);
+    dist[S] = 0;
+    const queue = [S];
+    inQueue[S] = true;
+    while (queue.length) {
+      const u = queue.shift();
+      inQueue[u] = false;
+      graph[u].forEach((e, idx) => {
+        if (e.cap > 0 && dist[u] + e.cost < dist[e.to]) {
+          dist[e.to] = dist[u] + e.cost;
+          prevNode[e.to] = u;
+          prevEdge[e.to] = idx;
+          if (!inQueue[e.to]) { inQueue[e.to] = true; queue.push(e.to); }
         }
       });
+    }
+    if (dist[T] === Infinity) break; // 더 이상 늘릴 수 있는 배정이 없음
+
+    let aug = Infinity;
+    for (let v = T; v !== S; v = prevNode[v]) aug = Math.min(aug, graph[prevNode[v]][prevEdge[v]].cap);
+    for (let v = T; v !== S; v = prevNode[v]) {
+      const e = graph[prevNode[v]][prevEdge[v]];
+      e.cap -= aug;
+      graph[v][e.other].cap += aug;
+    }
+  }
+
+  const assigned = {};
+  students.forEach((s, i) => {
+    graph[studentNode(i)].forEach(e => {
+      if (e.cap === 0) assigned[s.studentId] = topicIds[e.to - 1 - n]; // 이 간선으로 유량이 흘렀다 = 이 주제로 배정됨
     });
   });
 
-  let leftover = pool.filter(s => !assigned[s.studentId]);
-  topicIds.forEach(topicId => {
-    while (remaining[topicId] > 0 && leftover.length) {
-      const s = leftover.shift();
-      assigned[s.studentId] = topicId;
-      remaining[topicId]--;
-    }
+  // 3지망: 1·2지망 결과는 그대로 두고, 남은 자리에 한해서만 채운다.
+  const remaining = {};
+  topicIds.forEach(id => {
+    const used = Object.values(assigned).filter(t => t === id).length;
+    remaining[id] = (cap[id] || 0) - used;
   });
+  students
+    .filter(s => !assigned[s.studentId] && s.choice3)
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+    .forEach(s => {
+      if (remaining[s.choice3] > 0) {
+        assigned[s.studentId] = s.choice3;
+        remaining[s.choice3]--;
+      }
+    });
 
-  const unassignedIds = pool.filter(s => !assigned[s.studentId]).map(s => s.studentId);
+  const unassignedIds = students.filter(s => !assigned[s.studentId]).map(s => s.studentId);
   return { assigned, unassignedIds };
 }
 
