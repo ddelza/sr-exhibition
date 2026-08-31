@@ -10,6 +10,8 @@
 .final-card .label { font-size: 0.82rem; opacity: 0.85; margin-bottom: 4px; }
 .final-card .topic { font-size: 1.15rem; font-weight: 700; }
 select { width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.topic-preview-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+.topic-preview-item:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
@@ -34,6 +36,8 @@ const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 let YEAR = null;
 const student = requireSrLogin();
 let adopted = {};
+let adoptedAll = {}; // 교사 계정 미리보기용: { [ban]: { [postId]: {label, ts} } }
+let teacherBan = '';
 
 function esc(str) {
   if (!str) return '';
@@ -59,6 +63,32 @@ function renderFinal(final) {
   </div>
   <p class="hint" style="text-align:center">선생님이 이미 모둠을 배정했습니다. 다음 차시부터는 이 모둠으로 활동합니다.</p>`;
 }
+
+function renderTeacherPreview() {
+  const bans = Object.keys(adoptedAll).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+  const topics = adoptedAll[teacherBan] || {};
+  const banOptionsHtml = bans.length
+    ? bans.map(b => `<option value="${esc(b)}"${b === teacherBan ? ' selected' : ''}>${esc(b)}반</option>`).join('')
+    : '<option value="">채택된 반이 없습니다</option>';
+
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <h2>반 선택 (교사 미리보기)</h2>
+      <p class="hint">교사 계정은 학생 대신 신청할 수 없고, 반별로 채택된 주제만 미리 볼 수 있습니다.</p>
+      <select id="teacherBanSelect" onchange="onTeacherBanChange()">${banOptionsHtml}</select>
+    </div>
+    <div class="card">
+      <h2>${teacherBan ? esc(teacherBan) + '반 채택 주제' : '채택 주제'}</h2>
+      ${Object.keys(topics).length
+        ? Object.values(topics).map(t => `<div class="topic-preview-item">${esc(t.label)}</div>`).join('')
+        : '<div class="empty-state">이 반은 아직 채택된 주제가 없습니다.</div>'}
+    </div>`;
+}
+
+window.onTeacherBanChange = function() {
+  teacherBan = document.getElementById('teacherBanSelect').value;
+  renderTeacherPreview();
+};
 
 function renderForm(existingPref) {
   const c1 = existingPref ? existingPref.choice1 : '';
@@ -128,6 +158,16 @@ window.onSubmitPref = async function() {
   try {
     YEAR = await loadYear();
     const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    if (student.isTeacher) {
+      const res = await fetch(`${base}/adopted.json`);
+      adoptedAll = (await res.json()) || {};
+      const bans = Object.keys(adoptedAll).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+      teacherBan = bans[0] || '';
+      renderTeacherPreview();
+      return;
+    }
+
     const [adoptedRes, finalRes, prefRes] = await Promise.all([
       fetch(`${base}/adopted/${student.ban}.json`).then(r => r.json()),
       fetch(`${base}/finalGroups/${student.id}.json`).then(r => r.json()),
