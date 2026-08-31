@@ -20,6 +20,9 @@
 .adopt-btn.off { background: var(--accent-soft); color: var(--accent); }
 .adopt-btn.on { background: var(--accent); color: #fff; }
 select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+.missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.missing-chip { background: var(--danger-soft); color: var(--danger); border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -46,6 +49,10 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
       <p class="hint">채택은 반별로 이루어집니다. 아래 목록도 선택한 반 학생의 글만 보여줍니다.</p>
       <select id="banSelect" onchange="onBanChange()"></select>
     </div>
+    <div class="card">
+      <h2>제출 현황</h2>
+      <div id="submissionStatus"></div>
+    </div>
     <div id="postList"><div class="loading-state">불러오는 중...</div></div>
   </div>
 </div>
@@ -53,8 +60,10 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3; // 이 전람회는 3학년 대상. 다른 학년도 참여하게 되면 이 값을 조정하거나 학년 선택 UI를 추가할 것.
 let YEAR = null;
 let posts = {}, likes = {}, adoptedAll = {}; // adoptedAll: { [ban]: { [postId]: {label, ts} } }
+let roster = {}; // { studentId: {grade,ban,num,name,...} } — 제출 현황(미제출자) 확인용, 3학년 전체 명단
 let selectedBan = '';
 
 function esc(str) {
@@ -98,7 +107,12 @@ async function loadAll() {
 }
 
 function bansAvailable() {
-  const set = new Set(Object.values(posts).map(p => String(p.ban)));
+  // 로스터 기준(3학년 전체 반) + 혹시 다른 학년/반에서 올라온 글의 반도 놓치지 않도록 posts도 함께 합친다.
+  // 로스터를 포함시키는 이유: 한 명도 제출하지 않은 반은 posts만 보면 아예 목록에 나타나지 않기 때문.
+  const set = new Set([
+    ...Object.values(roster).map(s => String(s.ban)),
+    ...Object.values(posts).map(p => String(p.ban)),
+  ]);
   return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
 }
 
@@ -106,7 +120,7 @@ function renderBanSelect() {
   const bans = bansAvailable();
   const sel = document.getElementById('banSelect');
   if (!bans.length) {
-    sel.innerHTML = '<option value="">아직 게시된 글이 없습니다</option>';
+    sel.innerHTML = '<option value="">학생 명단을 불러오지 못했습니다</option>';
     selectedBan = '';
     return;
   }
@@ -119,7 +133,32 @@ window.onBanChange = function() {
   render();
 };
 
+function renderSubmissionStatus() {
+  const wrap = document.getElementById('submissionStatus');
+  const classStudents = Object.entries(roster)
+    .filter(([, s]) => String(s.ban) === selectedBan)
+    .map(([id, s]) => ({ id, ...s }))
+    .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+  if (!classStudents.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반의 명단을 찾을 수 없습니다.</div>';
+    return;
+  }
+
+  const submittedIds = new Set(Object.values(posts).filter(p => String(p.ban) === selectedBan).map(p => p.id));
+  const missing = classStudents.filter(s => !submittedIds.has(s.id));
+
+  let html = `<div class="submission-summary">제출 ${classStudents.length - missing.length} / ${classStudents.length}명</div>`;
+  if (!missing.length) {
+    html += '<div class="ok-msg show">전원 제출했습니다 🎉</div>';
+  } else {
+    html += `<div class="missing-list">${missing.map(s => `<span class="missing-chip">${esc(s.num)}번 ${esc(s.name)}</span>`).join('')}</div>`;
+  }
+  wrap.innerHTML = html;
+}
+
 function render() {
+  renderSubmissionStatus();
   const adopted = adoptedAll[selectedBan] || {};
   const ids = Object.keys(posts)
     .filter(id => String(posts[id].ban) === selectedBan)
@@ -170,9 +209,18 @@ window.toggleAdopt = async function(postId) {
   await loadAll();
 };
 
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
 async function init() {
   try {
     YEAR = await loadYear();
+    await loadRoster();
     await loadAll();
     setInterval(loadAll, 8000);
   } catch (e) {
