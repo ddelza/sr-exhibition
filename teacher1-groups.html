@@ -11,6 +11,7 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .topic-row { background: var(--surface); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .topic-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .topic-row-top .name { font-weight: 700; font-size: 0.95rem; }
+.topic-author { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px; }
 .topic-row-top input { width: 70px; padding: 7px 8px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.88rem; text-align: center; }
 .pref-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 0.76rem; color: var(--text-muted); }
 .pref-cols .col-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
@@ -20,6 +21,10 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .result-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
 .result-topic .members { font-size: 0.82rem; color: var(--text-muted); }
 .unassigned-box { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 8px; }
+
+.submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+.missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.missing-chip { background: var(--danger-soft); color: var(--danger); border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; }
 
 .current-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .current-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; }
@@ -55,6 +60,11 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
     </div>
 
     <div class="card">
+      <h2>지망 미신청 학생</h2>
+      <div id="unappliedStatus"></div>
+    </div>
+
+    <div class="card">
       <h2>현재 등록된 모둠</h2>
       <p class="hint">이미 등록된 모둠입니다. 드롭다운으로 학생을 다른 모둠으로 옮기거나 모둠에서 뺄 수 있습니다 (선택 즉시 저장).</p>
       <div id="currentGroups"></div>
@@ -77,8 +87,11 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3; // 이 전람회는 3학년 대상. 다른 학년도 참여하게 되면 이 값을 조정할 것.
 let YEAR = null;
 let adoptedAll = {}; // { [ban]: { [postId]: {label, ts} } }
+let posts = {}; // { postId: {grade,ban,num,name,question,...} } — 작성자 표시용
+let roster = {}; // { studentId: {grade,ban,num,name,...} } — 지망 미신청자 확인용, 3학년 전체 명단
 let preferences = {}; // { studentId: {name,grade,ban,num,choice1,choice2,choice3,ts} }
 let finalGroups = {}; // { studentId: {topicId, topicLabel, ban, ts} }
 let capacities = {};
@@ -113,16 +126,23 @@ async function loadYear() {
 
 async function loadAll() {
   const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
-  const [a, p, cap, fg] = await Promise.all([
+  const [a, p, cap, fg, ps] = await Promise.all([
     fetch(`${base}/adopted.json`).then(r => r.json()),
     fetch(`${base}/preferences.json`).then(r => r.json()),
     fetch(`${base}/groupCapacity.json`).then(r => r.json()),
     fetch(`${base}/finalGroups.json`).then(r => r.json()),
+    fetch(`${base}/posts.json`).then(r => r.json()),
   ]);
   adoptedAll = a || {};
   preferences = p || {};
   capacities = cap || {};
   finalGroups = fg || {};
+  posts = ps || {};
+}
+
+function authorLine(topicId) {
+  const post = posts[topicId];
+  return post ? `${esc(post.grade)}학년 ${esc(post.ban)}반 ${esc(post.num)}번 ${esc(post.name)}` : '';
 }
 
 function currentAdopted() {
@@ -134,8 +154,33 @@ function bansAvailable() {
     ...Object.values(preferences).map(p => String(p.ban)),
     ...Object.values(finalGroups).map(g => String(g.ban)),
     ...Object.keys(adoptedAll),
+    ...Object.values(roster).map(s => String(s.ban)),
   ]);
   return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderUnappliedStatus() {
+  const wrap = document.getElementById('unappliedStatus');
+  const classStudents = Object.entries(roster)
+    .filter(([, s]) => String(s.ban) === selectedBan)
+    .map(([id, s]) => ({ id, ...s }))
+    .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+  if (!classStudents.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반의 명단을 찾을 수 없습니다.</div>';
+    return;
+  }
+
+  const appliedIds = new Set(Object.entries(preferences).filter(([, p]) => String(p.ban) === selectedBan).map(([id]) => id));
+  const missing = classStudents.filter(s => !appliedIds.has(s.id));
+
+  let html = `<div class="submission-summary">신청 ${classStudents.length - missing.length} / ${classStudents.length}명</div>`;
+  if (!missing.length) {
+    html += '<div class="ok-msg show">전원 신청했습니다 🎉</div>';
+  } else {
+    html += `<div class="missing-list">${missing.map(s => `<span class="missing-chip">${esc(s.num)}번 ${esc(s.name)}</span>`).join('')}</div>`;
+  }
+  wrap.innerHTML = html;
 }
 
 function memberLabel(studentId) {
@@ -160,7 +205,9 @@ function renderCurrentGroups() {
 
   wrap.innerHTML = Object.entries(byTopic).map(([topicId, sids]) => {
     const label = adopted[topicId] ? adopted[topicId].label : (finalGroups[sids[0]].topicLabel || '(삭제된 주제)');
+    const author = authorLine(topicId);
     return `<div class="current-topic">
+      ${author ? `<div class="topic-author">${author}</div>` : ''}
       <div class="name">${esc(label)} (${sids.length}명)</div>
       ${sids.map(sid => `<div class="member-row">
         <span>${memberLabel(sid)}</span>
@@ -218,7 +265,9 @@ function renderTopicSettings() {
   wrap.innerHTML = topicIds.map(topicId => {
     const byRank = r => students.filter(s => s['choice' + r] === topicId);
     const col = (title, list) => `<div><div class="col-title">${title} (${list.length})</div>${list.map(s => `<div>${esc(s.ban)}반 ${esc(s.num)}번 ${esc(s.name)}</div>`).join('') || '<div>-</div>'}</div>`;
+    const author = authorLine(topicId);
     return `<div class="topic-row">
+      ${author ? `<div class="topic-author">${author}</div>` : ''}
       <div class="topic-row-top">
         <span class="name">${esc(adopted[topicId].label)}</span>
         <input type="number" min="0" id="cap-${topicId}" value="${capacities[topicId] || 0}">
@@ -236,6 +285,7 @@ window.onBanChange = function() {
   selectedBan = document.getElementById('banSelect').value;
   document.getElementById('resultWrap').innerHTML = '';
   lastResult = null;
+  renderUnappliedStatus();
   renderCurrentGroups();
   renderTopicSettings();
 };
@@ -303,7 +353,9 @@ function renderResult(students) {
     const members = Object.entries(lastResult.assigned)
       .filter(([, t]) => t === topicId)
       .map(([studentId]) => byId[studentId]);
+    const author = authorLine(topicId);
     html += `<div class="result-topic">
+      ${author ? `<div class="topic-author">${author}</div>` : ''}
       <div class="name">${esc(adopted[topicId].label)} (${members.length}/${capacities[topicId]}명)</div>
       <div class="members">${members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ') || '-'}</div>
     </div>`;
@@ -332,11 +384,21 @@ window.registerGroups = async function() {
   renderCurrentGroups();
 };
 
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
 async function init() {
   try {
     YEAR = await loadYear();
+    await loadRoster();
     await loadAll();
     renderBanSelect();
+    renderUnappliedStatus();
     renderCurrentGroups();
     renderTopicSettings();
   } catch (e) {
