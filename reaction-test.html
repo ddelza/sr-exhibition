@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>반응속도 테스트 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 560px; }
+.header p { max-width: 480px; margin-left: auto; margin-right: auto; }
+
+.config-row { margin-bottom: 14px; }
+.config-row:last-child { margin-bottom: 0; }
+.config-row label.field-label { display: flex; justify-content: space-between; }
+.config-row .value-tag { color: var(--accent); font-weight: 700; }
+select, input[type=range] { width: 100%; }
+select { padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.92rem; font-family: inherit; background: var(--surface); color: var(--text); }
+input[type=range] { accent-color: var(--accent); height: 22px; }
+
+.stim-box {
+  height: 220px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 20px; font-size: 1.1rem; font-weight: 700; color: var(--text-muted);
+  background: var(--bg); border: 2px solid var(--border); margin-bottom: 14px; transition: background 0.05s, color 0.05s;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.stim-box.stim { background: #ffde59; color: #4a3b00; border-color: #ffde59; }
+.stim-box.false-start { background: var(--danger-soft); color: var(--danger); }
+
+.progress-line { text-align: center; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; min-height: 1.2em; }
+.status-line { text-align: center; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px; min-height: 1.2em; }
+.result-line { text-align: center; font-size: 1.6rem; font-weight: 800; color: var(--accent); margin-bottom: 14px; min-height: 1.4em; }
+.result-line .avg-tag { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
+
+.ready-btn {
+  width: 100%; padding: 15px; border: none; border-radius: 12px; background: var(--accent); color: #fff;
+  font-size: 1rem; font-weight: 800; cursor: pointer;
+}
+.ready-btn:disabled { opacity: 0.5; cursor: default; }
+
+.filter-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.filter-row select { font-size: 0.85rem; padding: 8px 10px; }
+
+.rank-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.rank-table th, .rank-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.rank-table th { font-size: 0.74rem; color: var(--text-muted); font-weight: 700; }
+.rank-table tr.me td { font-weight: 700; color: var(--accent); }
+.rank-table tr:first-child td { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>⚡ 반응속도 테스트</h1>
+    <p>"준비"를 누르면 같은 조건으로 5회 연속 시행합니다. 자극을 확인하면 화면(박스)을 터치·클릭하거나 스페이스바를 눌러 최대한 빨리 반응하세요. 5회가 끝나면 평균 반응시간이 랭킹에 등록됩니다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div class="card">
+    <h2>자극 설정</h2>
+    <div class="config-row">
+      <label class="field-label" for="visualMode">시각 자극</label>
+      <select id="visualMode">
+        <option value="both">색과 글자 모두 바뀜</option>
+        <option value="color">색만 바뀜</option>
+        <option value="text">글자만 바뀜</option>
+        <option value="none">안 바뀜</option>
+      </select>
+    </div>
+    <div class="config-row">
+      <label class="field-label" for="volumeRange">청각 자극 — 음량 <span class="value-tag" id="volumeValue">50%</span></label>
+      <input type="range" id="volumeRange" min="0" max="100" step="5" value="50">
+    </div>
+    <div class="config-row">
+      <label class="field-label" for="freqRange">청각 자극 — 음의 높이(진동수) <span class="value-tag" id="freqValue">400Hz</span></label>
+      <input type="range" id="freqRange" min="0" max="8" step="1" value="3">
+    </div>
+    <p class="hint">음량을 0%로 두면 청각 자극이 나오지 않습니다. 시각·청각 모두 켜져 있으면 같은 순간에 함께 제시됩니다.</p>
+  </div>
+
+  <div class="card">
+    <div class="stim-box" id="stimBox">준비를 눌러 시작하세요</div>
+    <div class="progress-line" id="progressLine">&nbsp;</div>
+    <div class="status-line" id="statusLine">&nbsp;</div>
+    <div class="result-line" id="resultLine">&nbsp;</div>
+    <button class="ready-btn" id="readyBtn" onclick="startSet()">준비 (5회 연속 측정)</button>
+  </div>
+
+  <div class="card">
+    <h2>🏆 랭킹</h2>
+    <p class="hint">반응 조건이 다르면 반응속도도 달라지므로, 조건을 골라서 그 조건끼리만 비교해보자. 순위는 5회 평균 기록 기준.</p>
+    <div class="filter-row">
+      <select id="filterVisual" onchange="renderRanking()">
+        <option value="">시각: 전체</option>
+        <option value="both">색과 글자 모두 바뀜</option>
+        <option value="color">색만 바뀜</option>
+        <option value="text">글자만 바뀜</option>
+        <option value="none">안 바뀜</option>
+      </select>
+      <select id="filterFreq" onchange="renderRanking()">
+        <option value="">진동수: 전체</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="rank-table">
+        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간(5회)</th><th>시각</th><th>음량</th><th>진동수</th></tr></thead>
+        <tbody id="rankingBody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let base = null;
+
+const FREQS = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
+const VISUAL_LABELS = { both: '색+글자', color: '색만', text: '글자만', none: '안바뀜' };
+const TRIALS_PER_SET = 5;
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+const volumeRange = document.getElementById('volumeRange');
+const freqRange = document.getElementById('freqRange');
+volumeRange.addEventListener('input', () => {
+  document.getElementById('volumeValue').textContent = volumeRange.value + '%';
+});
+freqRange.addEventListener('input', () => {
+  document.getElementById('freqValue').textContent = FREQS[Number(freqRange.value)] + 'Hz';
+});
+
+let audioCtx = null;
+function ensureAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playTone(freq, volumePercent, durationMs) {
+  if (volumePercent <= 0) return;
+  ensureAudioCtx();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.value = (volumePercent / 100) * 0.3;
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + durationMs / 1000);
+}
+
+// idle: 대기(준비 버튼 대기) / armed: 자극을 기다리는 중(false start 감지 대상)
+// waiting: 자극 제시 후 반응 대기 / betweenTrials: 한 시행 끝나고 다음 시행 준비하는 짧은 텀
+let state = 'idle';
+let stimulusTime = 0;
+let pendingTimer = null;
+let trialIndex = 0; // 이번 세트에서 지금까지 유효하게 마친 시행 수
+let trialTimes = [];
+
+const stimBox = document.getElementById('stimBox');
+const progressLine = document.getElementById('progressLine');
+const statusLine = document.getElementById('statusLine');
+const resultLine = document.getElementById('resultLine');
+const readyBtn = document.getElementById('readyBtn');
+const visualModeSel = document.getElementById('visualMode');
+
+function setConfigDisabled(disabled) {
+  visualModeSel.disabled = disabled;
+  volumeRange.disabled = disabled;
+  freqRange.disabled = disabled;
+}
+
+window.startSet = function() {
+  const visualMode = visualModeSel.value;
+  const volume = Number(volumeRange.value);
+  if (visualMode === 'none' && volume <= 0) {
+    alert('시각·청각 자극이 모두 꺼져 있습니다. 적어도 하나는 켜주세요.');
+    return;
+  }
+  ensureAudioCtx();
+  setConfigDisabled(true);
+  readyBtn.disabled = true;
+  trialIndex = 0;
+  trialTimes = [];
+  resultLine.textContent = ' ';
+  armNextTrial();
+};
+
+function armNextTrial() {
+  stimBox.className = 'stim-box';
+  stimBox.textContent = '대기하세요';
+  progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
+  statusLine.textContent = '대기 중, 자극이 나올 때까지 기다리세요.';
+  state = 'armed';
+
+  const delay = 1500 + Math.random() * 2500;
+  pendingTimer = setTimeout(fireStimulus, delay);
+}
+
+function fireStimulus() {
+  const visualMode = visualModeSel.value;
+  const volume = Number(volumeRange.value);
+  const freq = FREQS[Number(freqRange.value)];
+
+  stimulusTime = performance.now();
+  if (visualMode === 'both' || visualMode === 'color') stimBox.classList.add('stim');
+  if (visualMode === 'both' || visualMode === 'text') stimBox.textContent = '지금 반응하세요!';
+  playTone(freq, volume, 1000);
+
+  statusLine.textContent = '지금 반응하세요!';
+  state = 'waiting';
+}
+
+function onResponse() {
+  if (state === 'armed') {
+    clearTimeout(pendingTimer);
+    stimBox.className = 'stim-box false-start';
+    stimBox.textContent = '너무 빨랐습니다!';
+    statusLine.textContent = '자극이 나오기 전에 반응했습니다. 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
+    state = 'betweenTrials';
+    setTimeout(armNextTrial, 1200);
+    return;
+  }
+  if (state === 'waiting') {
+    const rt = performance.now() - stimulusTime;
+    trialTimes.push(rt);
+    trialIndex++;
+    stimBox.className = 'stim-box';
+    stimBox.textContent = '기록됨';
+    progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
+
+    if (trialIndex < TRIALS_PER_SET) {
+      statusLine.textContent = '방금 기록: ' + Math.round(rt) + 'ms, 잠시 후 다음 시행을 시작합니다.';
+      state = 'betweenTrials';
+      setTimeout(armNextTrial, 1200);
+    } else {
+      const avg = trialTimes.reduce(function(a, b) { return a + b; }, 0) / trialTimes.length;
+      const roundedTimes = trialTimes.map(function(t) { return Math.round(t); });
+      statusLine.textContent = '5회 측정이 끝났습니다. "준비"를 눌러 다시 측정할 수 있습니다.';
+      resultLine.innerHTML = Math.round(avg) + ' ms<span class="avg-tag">5회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>';
+      saveAttempt(Math.round(avg), roundedTimes);
+      setConfigDisabled(false);
+      readyBtn.disabled = false;
+      state = 'idle';
+    }
+  }
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.code === 'Space') { e.preventDefault(); onResponse(); }
+});
+stimBox.addEventListener('mousedown', onResponse);
+stimBox.addEventListener('touchstart', function(e) { e.preventDefault(); onResponse(); }, { passive: false });
+
+let allAttempts = {};
+
+async function saveAttempt(avgMs, times) {
+  const visualMode = visualModeSel.value;
+  const volume = Number(volumeRange.value);
+  const freq = FREQS[Number(freqRange.value)];
+  const payload = {
+    studentId: student.id, studentName: student.name, grade: student.grade, ban: student.ban, num: student.num,
+    visualMode: visualMode, audioVolume: volume, audioFreq: volume > 0 ? freq : 0,
+    avgMs: avgMs, trialTimes: times, ts: Date.now(),
+  };
+  await fetch(base + '/attempts.json', { method: 'POST', body: JSON.stringify(payload) });
+  await loadRanking();
+}
+
+async function loadRanking() {
+  const res = await fetch(base + '/attempts.json');
+  allAttempts = (await res.json()) || {};
+  renderRanking();
+}
+
+window.renderRanking = function() {
+  const fv = document.getElementById('filterVisual').value;
+  const ff = document.getElementById('filterFreq').value;
+  let list = Object.values(allAttempts);
+  if (fv) list = list.filter(function(a) { return a.visualMode === fv; });
+  if (ff) list = list.filter(function(a) { return String(a.audioFreq) === ff; });
+  list.sort(function(a, b) { return a.avgMs - b.avgMs; });
+  list = list.slice(0, 30);
+
+  document.getElementById('rankingBody').innerHTML = list.map(function(a, i) {
+    return '<tr class="' + (a.studentId === student.id ? 'me' : '') + '">' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td>' + esc(a.grade) + '-' + esc(a.ban) + '-' + esc(a.num) + ' ' + esc(a.studentName) + '</td>' +
+      '<td>' + a.avgMs + 'ms</td>' +
+      '<td>' + esc(VISUAL_LABELS[a.visualMode] || a.visualMode) + '</td>' +
+      '<td>' + a.audioVolume + '%</td>' +
+      '<td>' + (a.audioFreq ? a.audioFreq + 'Hz' : '-') + '</td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
+};
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  document.getElementById('freqValue').textContent = FREQS[Number(freqRange.value)] + 'Hz';
+  document.getElementById('filterFreq').innerHTML =
+    '<option value="">진동수: 전체</option>' + FREQS.map(function(f) { return '<option value="' + f + '">' + f + 'Hz</option>'; }).join('');
+  try {
+    YEAR = await loadYear();
+    base = DB_URL + '/years/' + YEAR + '/exhibition/reactionTest';
+    await loadRanking();
+  } catch (e) {
+    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="6">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
+  }
+})();
+</script>
+</body>
+</html>
