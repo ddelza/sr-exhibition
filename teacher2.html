@@ -60,7 +60,7 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {};
+let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {}, titleAll = {};
 let selectedBan = '';
 
 function esc(str) {
@@ -92,18 +92,20 @@ async function loadYear() {
 async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
-  const [fg, p, pref, it, fb] = await Promise.all([
+  const [fg, p, pref, it, fb, tt] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
     fetch(`${s2}/items.json`).then(r => r.json()),
     fetch(`${s2}/feedback.json`).then(r => r.json()),
+    fetch(`${s2}/title.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
   preferences = pref || {};
   itemsAll = it || {};
   feedbackAll = fb || {};
+  titleAll = tt || {};
 }
 
 function bansAvailable() {
@@ -148,16 +150,18 @@ function render() {
 
   const FIELD_LABELS = [
     ['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'],
-    ['steps', '실험과정'], ['precautions', '유의사항'],
+    ['steps', '실험과정'], ['precautions', '유의사항'], ['memo', '자유메모'],
   ];
 
   wrap.innerHTML = topicIds.map(topicId => {
     const post = posts[topicId] || {};
     const groupItems = itemsAll[topicId] || {};
     const fb = feedbackAll[topicId];
+    const t = titleAll[topicId];
 
     return `<div class="group-card">
-      <h2>${esc(post.question || topicId)}</h2>
+      <h2>${t && t.text ? esc(t.text) : '(제목 미정)'}</h2>
+      <div class="members">${esc(post.question || topicId)}</div>
       <div class="members">${groups[topicId].map(memberLabel).join(', ')}</div>
       <div class="status-row">
         ${FIELD_LABELS.map(([key, label]) => {

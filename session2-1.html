@@ -33,6 +33,14 @@
   padding: 9px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
   font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
+
+.title-row { display: flex; gap: 8px; }
+.title-row input { flex: 1; padding: 10px 12px; font-size: 1rem; font-weight: 700; }
+.title-row button {
+  padding: 10px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.title-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -62,6 +70,7 @@ let post = {};
 let groupmates = [];
 let items = {}; // { [fieldKey]: { [itemId]: {text, author, authorName, lastEditor, lastEditorName, createdAt, updatedAt} } }
 let feedback = null;
+let title = null; // { text, lastEditor, lastEditorName, updatedAt }
 let editingItemKey = null; // `${fieldKey}:${itemId}`
 
 const FIELD_DEFS = [
@@ -70,6 +79,7 @@ const FIELD_DEFS = [
   { key: 'controlledVars', label: '③ 통제변인', placeholder: '실험 내내 똑같이 유지해야 할 조건을 입력 후 추가', numbered: false },
   { key: 'steps', label: '④ 실험 과정', placeholder: '새 단계 입력 후 추가', numbered: true },
   { key: 'precautions', label: '⑤ 안전·유의사항', placeholder: '조심해야 할 점을 입력 후 추가', numbered: false },
+  { key: 'memo', label: '⑥ 자유 메모', placeholder: '그 밖에 자유롭게 메모를 남겨보자', numbered: false },
 ];
 
 function esc(str) {
@@ -103,14 +113,27 @@ function withFocusPreserved(renderFn) {
 }
 
 async function loadAll() {
-  const [it, f] = await Promise.all([
+  const [it, f, t] = await Promise.all([
     fetch(`${base}/items/${topicId}.json`).then(r => r.json()),
     fetch(`${base}/feedback/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/title/${topicId}.json`).then(r => r.json()),
   ]);
   items = it || {};
   feedback = f || null;
+  title = t || null;
   withFocusPreserved(render);
 }
+
+window.saveTitle = async function() {
+  const input = document.getElementById('titleInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const payload = { text, lastEditor: student.id, lastEditorName: student.name, updatedAt: Date.now() };
+  await fetch(`${base}/title/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  title = payload;
+  const meta = document.getElementById('titleMeta');
+  if (meta) meta.textContent = `최종 수정: ${payload.lastEditorName} · 방금 전`;
+};
 
 function itemMetaText(it) {
   const author = `작성자: ${esc(it.authorName)}`;
@@ -208,6 +231,15 @@ function render() {
     ${feedback && feedback.text ? `<div class="feedback-banner"><b>선생님 피드백</b>${esc(feedback.text)}</div>` : ''}
 
     <div class="group-card">
+      <h2>실험 제목</h2>
+      <div class="title-row">
+        <input type="text" id="titleInput" placeholder="우리 모둠 실험에 제목을 붙여보자" value="${esc(title ? title.text : '')}">
+        <button onclick="saveTitle()">저장</button>
+      </div>
+      <div class="title-meta" id="titleMeta">${title && title.updatedAt ? `최종 수정: ${esc(title.lastEditorName)}` : '아직 정하지 않았습니다.'}</div>
+    </div>
+
+    <div class="group-card">
       <h2>${esc(post.question || '')}</h2>
       <div class="post-hypo">
         <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
@@ -219,6 +251,9 @@ function render() {
     ${FIELD_DEFS.map(itemsBlock).join('')}
   `;
   document.getElementById('content').innerHTML = html;
+
+  const titleInput = document.getElementById('titleInput');
+  if (titleInput) titleInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveTitle(); } });
 
   FIELD_DEFS.forEach(def => {
     const input = document.getElementById('newItem-' + def.key);
