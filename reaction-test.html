@@ -15,15 +15,22 @@
 .config-row .value-tag { color: var(--accent); font-weight: 700; }
 select, input[type=range] { width: 100%; }
 select { padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.92rem; font-family: inherit; background: var(--surface); color: var(--text); }
+select:disabled { opacity: 0.5; }
 input[type=range] { accent-color: var(--accent); height: 22px; }
+input[type=range]:disabled { opacity: 0.5; }
+
+.color-row { display: flex; gap: 14px; }
+.color-pick { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.color-pick input[type=color] { width: 100%; height: 40px; border: 1.5px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface); cursor: pointer; }
+.color-pick span { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
 
 .stim-box {
   height: 220px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
-  text-align: center; padding: 20px; font-size: 1.1rem; font-weight: 700; color: var(--text-muted);
+  text-align: center; padding: 20px; font-size: 1.05rem; font-weight: 700; color: var(--text-muted);
   background: var(--bg); border: 2px solid var(--border); margin-bottom: 14px; transition: background 0.05s, color 0.05s;
   user-select: none; -webkit-user-select: none; touch-action: manipulation;
 }
-.stim-box.stim { background: #ffde59; color: #4a3b00; border-color: #ffde59; }
+.stim-box.stim { border-color: var(--accent); }
 .stim-box.false-start { background: var(--danger-soft); color: var(--danger); }
 
 .progress-line { text-align: center; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; min-height: 1.2em; }
@@ -37,14 +44,16 @@ input[type=range] { accent-color: var(--accent); height: 22px; }
 }
 .ready-btn:disabled { opacity: 0.5; cursor: default; }
 
-.filter-row { display: flex; gap: 8px; margin-bottom: 12px; }
-.filter-row select { font-size: 0.85rem; padding: 8px 10px; }
+.filter-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-row select { font-size: 0.85rem; padding: 8px 10px; flex: 1; min-width: 110px; }
 
 .rank-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
-.rank-table th, .rank-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.rank-table th, .rank-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .rank-table th { font-size: 0.74rem; color: var(--text-muted); font-weight: 700; }
 .rank-table tr.me td { font-weight: 700; color: var(--accent); }
 .rank-table tr:first-child td { font-weight: 700; }
+.rank-del-btn { background: none; border: none; color: var(--text-muted); font-size: 0.75rem; cursor: pointer; padding: 0; }
+.rank-del-btn:hover { color: var(--danger); text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -61,7 +70,7 @@ input[type=range] { accent-color: var(--accent); height: 22px; }
   </div>
 
   <div class="card">
-    <h2>자극 설정</h2>
+    <h2>자극 설정 — 시각·청각</h2>
     <div class="config-row">
       <label class="field-label" for="visualMode">시각 자극</label>
       <select id="visualMode">
@@ -70,6 +79,13 @@ input[type=range] { accent-color: var(--accent); height: 22px; }
         <option value="text">글자만 바뀜</option>
         <option value="none">안 바뀜</option>
       </select>
+    </div>
+    <div class="config-row" id="colorConfigRow">
+      <label class="field-label">색상 선택 (선택 안 하면 기본값 사용)</label>
+      <div class="color-row">
+        <div class="color-pick"><span>전 (자극 전)</span><input type="color" id="colorBefore" value="#ff0000"></div>
+        <div class="color-pick"><span>후 (자극 시)</span><input type="color" id="colorAfter" value="#00ff00"></div>
+      </div>
     </div>
     <div class="config-row">
       <label class="field-label" for="volumeRange">청각 자극 — 음량 <span class="value-tag" id="volumeValue">50%</span></label>
@@ -80,6 +96,20 @@ input[type=range] { accent-color: var(--accent); height: 22px; }
       <input type="range" id="freqRange" min="0" max="8" step="1" value="3">
     </div>
     <p class="hint">음량을 0%로 두면 청각 자극이 나오지 않습니다. 시각·청각 모두 켜져 있으면 같은 순간에 함께 제시됩니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>또는: 그 외의 감각 (오프라인 자극)</h2>
+    <div class="config-row">
+      <label class="field-label" for="otherSense">그 외의 감각</label>
+      <select id="otherSense">
+        <option value="">선택 안 함</option>
+        <option value="smell">후각</option>
+        <option value="taste">미각</option>
+        <option value="touch">피부감각</option>
+      </select>
+    </div>
+    <p class="hint">선택하면 위 시각·청각 자극이 모두 꺼집니다. 실험자가 자극을 주는 순간 <b>스페이스바를 제외한 아무 키를 누르거나 화면을 클릭·터치</b>하면서 동시에 오프라인으로 후각·미각·피부 자극을 주고, 피험자는 그 자극을 느끼면 <b>스페이스바</b>를 눌러 반응합니다.</p>
   </div>
 
   <div class="card">
@@ -104,11 +134,18 @@ input[type=range] { accent-color: var(--accent); height: 22px; }
       <select id="filterFreq" onchange="renderRanking()">
         <option value="">진동수: 전체</option>
       </select>
+      <select id="filterOtherSense" onchange="renderRanking()">
+        <option value="">감각: 전체</option>
+        <option value="__none__">시각·청각만</option>
+        <option value="smell">후각</option>
+        <option value="taste">미각</option>
+        <option value="touch">피부감각</option>
+      </select>
     </div>
     <div style="overflow-x:auto">
       <table class="rank-table">
-        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간(5회)</th><th>시각</th><th>음량</th><th>진동수</th></tr></thead>
-        <tbody id="rankingBody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
+        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간(5회)</th><th>시각</th><th>음량</th><th>진동수</th><th>기타감각</th><th></th></tr></thead>
+        <tbody id="rankingBody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -123,6 +160,7 @@ let base = null;
 
 const FREQS = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
 const VISUAL_LABELS = { both: '색+글자', color: '색만', text: '글자만', none: '안바뀜' };
+const OTHER_SENSE_LABELS = { smell: '후각', taste: '미각', touch: '피부감각' };
 const TRIALS_PER_SET = 5;
 
 function esc(str) {
@@ -131,17 +169,22 @@ function esc(str) {
 }
 
 async function loadYear() {
-  const res = await fetch(`${DB_URL}/config/current.json`);
+  const res = await fetch(DB_URL + '/config/current.json');
   const cfg = await res.json();
   return (cfg && cfg.year) || new Date().getFullYear();
 }
 
 const volumeRange = document.getElementById('volumeRange');
 const freqRange = document.getElementById('freqRange');
-volumeRange.addEventListener('input', () => {
+const colorBefore = document.getElementById('colorBefore');
+const colorAfter = document.getElementById('colorAfter');
+const otherSenseSel = document.getElementById('otherSense');
+const colorConfigRow = document.getElementById('colorConfigRow');
+
+volumeRange.addEventListener('input', function() {
   document.getElementById('volumeValue').textContent = volumeRange.value + '%';
 });
-freqRange.addEventListener('input', () => {
+freqRange.addEventListener('input', function() {
   document.getElementById('freqValue').textContent = FREQS[Number(freqRange.value)] + 'Hz';
 });
 
@@ -163,8 +206,16 @@ function playTone(freq, volumePercent, durationMs) {
   osc.stop(audioCtx.currentTime + durationMs / 1000);
 }
 
-// idle: 대기(준비 버튼 대기) / armed: 자극을 기다리는 중(false start 감지 대상)
-// waiting: 자극 제시 후 반응 대기 / betweenTrials: 한 시행 끝나고 다음 시행 준비하는 짧은 텀
+function contrastTextColor(hex) {
+  const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? '#222222' : '#ffffff';
+}
+
+// idle: 대기(준비 버튼 대기)
+// armed / armed-offline: 자극을 기다리는 중(false start 감지 대상)
+// waiting / waiting-offline: 자극 제시 후 반응 대기
+// betweenTrials: 한 시행 끝나고 다음 시행 준비하는 짧은 텀
 let state = 'idle';
 let stimulusTime = 0;
 let pendingTimer = null;
@@ -178,31 +229,71 @@ const resultLine = document.getElementById('resultLine');
 const readyBtn = document.getElementById('readyBtn');
 const visualModeSel = document.getElementById('visualMode');
 
+function isColorMode() {
+  const m = visualModeSel.value;
+  return m === 'both' || m === 'color';
+}
+function isOffline() {
+  return otherSenseSel.value !== '';
+}
+
+function updateColorRowVisibility() {
+  colorConfigRow.style.display = (isColorMode() && !isOffline()) ? 'block' : 'none';
+}
+function updateIdlePreview() {
+  stimBox.style.background = '';
+  stimBox.style.color = '';
+  if (!isOffline() && isColorMode() && (state === 'idle')) {
+    stimBox.style.background = colorBefore.value;
+    stimBox.style.color = contrastTextColor(colorBefore.value);
+  }
+}
+visualModeSel.addEventListener('change', function() { updateColorRowVisibility(); updateIdlePreview(); });
+colorBefore.addEventListener('input', updateIdlePreview);
+otherSenseSel.addEventListener('change', function() {
+  const offline = isOffline();
+  visualModeSel.disabled = offline;
+  volumeRange.disabled = offline;
+  freqRange.disabled = offline;
+  updateColorRowVisibility();
+  updateIdlePreview();
+  stimBox.textContent = offline ? '실험자: 자극을 줄 때 클릭/터치하거나 스페이스바 외의 키를 누르세요' : '준비를 눌러 시작하세요';
+});
+
 function setConfigDisabled(disabled) {
-  visualModeSel.disabled = disabled;
-  volumeRange.disabled = disabled;
-  freqRange.disabled = disabled;
+  const offline = isOffline();
+  visualModeSel.disabled = disabled || offline;
+  volumeRange.disabled = disabled || offline;
+  freqRange.disabled = disabled || offline;
+  colorBefore.disabled = disabled;
+  colorAfter.disabled = disabled;
+  otherSenseSel.disabled = disabled;
 }
 
 window.startSet = function() {
-  const visualMode = visualModeSel.value;
-  const volume = Number(volumeRange.value);
-  if (visualMode === 'none' && volume <= 0) {
-    alert('시각·청각 자극이 모두 꺼져 있습니다. 적어도 하나는 켜주세요.');
-    return;
+  const offline = isOffline();
+  if (!offline) {
+    const visualMode = visualModeSel.value;
+    const volume = Number(volumeRange.value);
+    if (visualMode === 'none' && volume <= 0) {
+      alert('시각·청각 자극이 모두 꺼져 있습니다. 적어도 하나는 켜주세요.');
+      return;
+    }
+    ensureAudioCtx();
   }
-  ensureAudioCtx();
   setConfigDisabled(true);
   readyBtn.disabled = true;
   trialIndex = 0;
   trialTimes = [];
   resultLine.textContent = ' ';
-  armNextTrial();
+  if (offline) armNextTrialOffline(); else armNextTrial();
 };
 
 function armNextTrial() {
   stimBox.className = 'stim-box';
   stimBox.textContent = '대기하세요';
+  state = 'idle'; // updateIdlePreview가 idle일 때만 미리보기 색을 적용하므로 잠깐 idle로 둔다
+  updateIdlePreview();
   progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
   statusLine.textContent = '대기 중, 자극이 나올 때까지 기다리세요.';
   state = 'armed';
@@ -217,7 +308,11 @@ function fireStimulus() {
   const freq = FREQS[Number(freqRange.value)];
 
   stimulusTime = performance.now();
-  if (visualMode === 'both' || visualMode === 'color') stimBox.classList.add('stim');
+  if (visualMode === 'both' || visualMode === 'color') {
+    stimBox.classList.add('stim');
+    stimBox.style.background = colorAfter.value;
+    stimBox.style.color = contrastTextColor(colorAfter.value);
+  }
   if (visualMode === 'both' || visualMode === 'text') stimBox.textContent = '지금 반응하세요!';
   playTone(freq, volume, 1000);
 
@@ -225,56 +320,95 @@ function fireStimulus() {
   state = 'waiting';
 }
 
-function onResponse() {
-  if (state === 'armed') {
-    clearTimeout(pendingTimer);
-    stimBox.className = 'stim-box false-start';
-    stimBox.textContent = '너무 빨랐습니다!';
-    statusLine.textContent = '자극이 나오기 전에 반응했습니다. 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
-    state = 'betweenTrials';
-    setTimeout(armNextTrial, 1200);
-    return;
-  }
-  if (state === 'waiting') {
-    const rt = performance.now() - stimulusTime;
-    trialTimes.push(rt);
-    trialIndex++;
-    stimBox.className = 'stim-box';
-    stimBox.textContent = '기록됨';
-    progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
+function armNextTrialOffline() {
+  stimBox.className = 'stim-box';
+  stimBox.style.background = '';
+  stimBox.style.color = '';
+  stimBox.textContent = '실험자: 자극을 줄 때 클릭/터치하거나 스페이스바 외의 키를 누르세요';
+  progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
+  statusLine.textContent = '실험자가 오프라인 자극을 줄 준비가 되면 신호를 보내세요. (피험자는 아직 스페이스바를 누르지 마세요)';
+  state = 'armed-offline';
+}
 
-    if (trialIndex < TRIALS_PER_SET) {
-      statusLine.textContent = '방금 기록: ' + Math.round(rt) + 'ms, 잠시 후 다음 시행을 시작합니다.';
-      state = 'betweenTrials';
-      setTimeout(armNextTrial, 1200);
-    } else {
-      const avg = trialTimes.reduce(function(a, b) { return a + b; }, 0) / trialTimes.length;
-      const roundedTimes = trialTimes.map(function(t) { return Math.round(t); });
-      statusLine.textContent = '5회 측정이 끝났습니다. "준비"를 눌러 다시 측정할 수 있습니다.';
-      resultLine.innerHTML = Math.round(avg) + ' ms<span class="avg-tag">5회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>';
-      saveAttempt(Math.round(avg), roundedTimes);
-      setConfigDisabled(false);
-      readyBtn.disabled = false;
-      state = 'idle';
-    }
+function triggerOffline() {
+  if (state !== 'armed-offline') return;
+  stimulusTime = performance.now();
+  stimBox.textContent = '피험자: 지금 자극을 느끼면 스페이스바를 누르세요';
+  statusLine.textContent = '피험자의 스페이스바 반응을 기다립니다.';
+  state = 'waiting-offline';
+}
+
+function completeTrial(rt, armNextFn) {
+  trialTimes.push(rt);
+  trialIndex++;
+  stimBox.className = 'stim-box';
+  stimBox.style.background = '';
+  stimBox.style.color = '';
+  stimBox.textContent = '기록됨';
+  progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
+
+  if (trialIndex < TRIALS_PER_SET) {
+    statusLine.textContent = '방금 기록: ' + Math.round(rt) + 'ms, 잠시 후 다음 시행을 시작합니다.';
+    state = 'betweenTrials';
+    setTimeout(armNextFn, 1200);
+  } else {
+    const avg = trialTimes.reduce(function(a, b) { return a + b; }, 0) / trialTimes.length;
+    const roundedTimes = trialTimes.map(function(t) { return Math.round(t); });
+    statusLine.textContent = '5회 측정이 끝났습니다. "준비"를 눌러 다시 측정할 수 있습니다.';
+    resultLine.innerHTML = Math.round(avg) + ' ms<span class="avg-tag">5회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>';
+    saveAttempt(Math.round(avg), roundedTimes);
+    setConfigDisabled(false);
+    readyBtn.disabled = false;
+    state = 'idle';
+    updateIdlePreview();
   }
 }
 
+function handleFalseStart(armNextFn) {
+  stimBox.className = 'stim-box false-start';
+  stimBox.textContent = '너무 빨랐습니다!';
+  statusLine.textContent = '자극이 나오기 전에 반응했습니다. 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
+  state = 'betweenTrials';
+  setTimeout(armNextFn, 1200);
+}
+
+function onResponse() {
+  if (state === 'armed') { clearTimeout(pendingTimer); handleFalseStart(armNextTrial); return; }
+  if (state === 'waiting') { completeTrial(performance.now() - stimulusTime, armNextTrial); }
+}
+
+function onOfflineSpace() {
+  if (state === 'armed-offline') { handleFalseStart(armNextTrialOffline); return; }
+  if (state === 'waiting-offline') { completeTrial(performance.now() - stimulusTime, armNextTrialOffline); }
+}
+
 document.addEventListener('keydown', function(e) {
-  if (e.code === 'Space') { e.preventDefault(); onResponse(); }
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (isOffline()) onOfflineSpace(); else onResponse();
+    return;
+  }
+  if (isOffline()) triggerOffline();
 });
-stimBox.addEventListener('mousedown', onResponse);
-stimBox.addEventListener('touchstart', function(e) { e.preventDefault(); onResponse(); }, { passive: false });
+stimBox.addEventListener('mousedown', function() { if (isOffline()) triggerOffline(); else onResponse(); });
+stimBox.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  if (isOffline()) triggerOffline(); else onResponse();
+}, { passive: false });
 
 let allAttempts = {};
 
 async function saveAttempt(avgMs, times) {
-  const visualMode = visualModeSel.value;
-  const volume = Number(volumeRange.value);
+  const offline = otherSenseSel.value;
+  const visualMode = offline ? 'none' : visualModeSel.value;
+  const volume = offline ? 0 : Number(volumeRange.value);
   const freq = FREQS[Number(freqRange.value)];
+  const useColor = !offline && (visualMode === 'both' || visualMode === 'color');
   const payload = {
     studentId: student.id, studentName: student.name, grade: student.grade, ban: student.ban, num: student.num,
     visualMode: visualMode, audioVolume: volume, audioFreq: volume > 0 ? freq : 0,
+    colorBefore: useColor ? colorBefore.value : null, colorAfter: useColor ? colorAfter.value : null,
+    otherSense: offline || null,
     avgMs: avgMs, trialTimes: times, ts: Date.now(),
   };
   await fetch(base + '/attempts.json', { method: 'POST', body: JSON.stringify(payload) });
@@ -290,13 +424,18 @@ async function loadRanking() {
 window.renderRanking = function() {
   const fv = document.getElementById('filterVisual').value;
   const ff = document.getElementById('filterFreq').value;
-  let list = Object.values(allAttempts);
-  if (fv) list = list.filter(function(a) { return a.visualMode === fv; });
-  if (ff) list = list.filter(function(a) { return String(a.audioFreq) === ff; });
-  list.sort(function(a, b) { return a.avgMs - b.avgMs; });
+  const fo = document.getElementById('filterOtherSense').value;
+  let list = Object.entries(allAttempts).map(function(entry) { return { id: entry[0], a: entry[1] }; });
+  if (fv) list = list.filter(function(x) { return x.a.visualMode === fv; });
+  if (ff) list = list.filter(function(x) { return String(x.a.audioFreq) === ff; });
+  if (fo === '__none__') list = list.filter(function(x) { return !x.a.otherSense; });
+  else if (fo) list = list.filter(function(x) { return x.a.otherSense === fo; });
+  list.sort(function(x, y) { return x.a.avgMs - y.a.avgMs; });
   list = list.slice(0, 30);
 
-  document.getElementById('rankingBody').innerHTML = list.map(function(a, i) {
+  document.getElementById('rankingBody').innerHTML = list.map(function(x, i) {
+    const a = x.a;
+    const canDelete = student.isTeacher || a.studentId === student.id;
     return '<tr class="' + (a.studentId === student.id ? 'me' : '') + '">' +
       '<td>' + (i + 1) + '</td>' +
       '<td>' + esc(a.grade) + '-' + esc(a.ban) + '-' + esc(a.num) + ' ' + esc(a.studentName) + '</td>' +
@@ -304,8 +443,16 @@ window.renderRanking = function() {
       '<td>' + esc(VISUAL_LABELS[a.visualMode] || a.visualMode) + '</td>' +
       '<td>' + a.audioVolume + '%</td>' +
       '<td>' + (a.audioFreq ? a.audioFreq + 'Hz' : '-') + '</td>' +
+      '<td>' + (a.otherSense ? esc(OTHER_SENSE_LABELS[a.otherSense] || a.otherSense) : '-') + '</td>' +
+      '<td>' + (canDelete ? '<button class="rank-del-btn" onclick="deleteAttempt(\'' + x.id + '\')">삭제</button>' : '') + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
+};
+
+window.deleteAttempt = async function(id) {
+  if (!confirm('이 기록을 삭제할까요?')) return;
+  await fetch(base + '/attempts/' + id + '.json', { method: 'DELETE' });
+  await loadRanking();
 };
 
 (async function init() {
@@ -314,12 +461,14 @@ window.renderRanking = function() {
   document.getElementById('freqValue').textContent = FREQS[Number(freqRange.value)] + 'Hz';
   document.getElementById('filterFreq').innerHTML =
     '<option value="">진동수: 전체</option>' + FREQS.map(function(f) { return '<option value="' + f + '">' + f + 'Hz</option>'; }).join('');
+  updateColorRowVisibility();
+  updateIdlePreview();
   try {
     YEAR = await loadYear();
     base = DB_URL + '/years/' + YEAR + '/exhibition/reactionTest';
     await loadRanking();
   } catch (e) {
-    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="6">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
+    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="8">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
   }
 })();
 </script>
