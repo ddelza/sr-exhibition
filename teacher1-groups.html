@@ -26,10 +26,12 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .assign-table tr.rank-1 { background: #dcf5e3; }
 .assign-table tr.rank-2 { background: #fff6d0; }
 .assign-table tr.rank-3 { background: var(--bg); }
+.assign-table tr.rank-none { background: var(--danger-soft); }
 .rank-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
 .rank-badge.rank-1 { background: #a8e6b8; color: #1a5c2e; }
 .rank-badge.rank-2 { background: #ffe58a; color: #7a5c00; }
 .rank-badge.rank-3 { background: var(--border); color: var(--text-muted); }
+.rank-badge.rank-none { background: #f2b8ae; color: #7a2e22; }
 
 .submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
 .missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -380,7 +382,8 @@ function computeBalancedTargets(topicIds, students, cap) {
   return target;
 }
 
-function assign(studentsIn, topicIds, cap) {
+function assign(studentsIn, topicIds, cap, hardCap) {
+  hardCap = hardCap || cap;
   const students = shuffled(studentsIn);
   const n = students.length;
   const m = topicIds.length;
@@ -456,8 +459,21 @@ function assign(studentsIn, topicIds, cap) {
       }
     });
 
+  // 그래도 배정 안 된 학생: 지망과 무관하게, 교사가 정한 실제 정원(균형 목표가 아니라)까지
+  // 남은 자리에 채운다. 이때도 지금 인원이 가장 적은 모둠부터 채워서 균형이 덜 깨지게 한다.
+  // 이렇게 배정된 학생은 지망 어디에도 없던 자리이므로 화면에 "지망 외 배정"으로 따로 표시한다.
+  const forced = {};
+  const sizeOf = id => Object.values(assigned).filter(t => t === id).length;
+  shuffled(students.filter(s => !assigned[s.studentId])).forEach(s => {
+    const candidates = topicIds.filter(id => sizeOf(id) < (hardCap[id] || 0));
+    if (!candidates.length) return;
+    candidates.sort((a, b) => sizeOf(a) - sizeOf(b));
+    assigned[s.studentId] = candidates[0];
+    forced[s.studentId] = true;
+  });
+
   const unassignedIds = students.filter(s => !assigned[s.studentId]).map(s => s.studentId);
-  return { assigned, unassignedIds };
+  return { assigned, unassignedIds, forced };
 }
 
 window.runAssign = async function() {
@@ -473,7 +489,7 @@ window.runAssign = async function() {
     return;
   }
   lastTargets = computeBalancedTargets(topicIds, students, capacities);
-  lastResult = assign(students, topicIds, lastTargets);
+  lastResult = assign(students, topicIds, lastTargets, capacities);
   renderResult(students);
 };
 
@@ -502,18 +518,26 @@ function renderResult(students) {
   const sizesUsed = topicIds.map(id => rows.filter(r => r.topicId === id).length).filter(n => n > 0);
   const sizeDiff = sizesUsed.length ? Math.max(...sizesUsed) - Math.min(...sizesUsed) : 0;
 
+  const forcedCount = lastResult.forced ? Object.keys(lastResult.forced).length : 0;
+
   let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
   html += sizeDiff <= 1
     ? `<div class="ok-msg show">모둠 인원이 균형있게 배정되었습니다 (최대-최소 차이 ${sizeDiff}명).</div>`
     : `<div class="unassigned-box">일부 주제는 지망자가 적어 목표 인원만큼 채우지 못해, 모둠 간 인원 차이가 ${sizeDiff}명입니다. 아래 "현재 등록된 모둠"에서 등록 후 수동으로 옮길 수 있습니다.</div>`;
+  if (forcedCount > 0) {
+    html += `<div class="unassigned-box">${forcedCount}명은 1~3지망 어디에도 자리가 없어, 지망과 무관하게 남은 자리(표에 "지망 외 배정"으로 표시)에 채웠습니다.</div>`;
+  }
   html += '<table class="assign-table"><thead><tr><th>모둠(주제)</th><th>번호</th><th>이름</th><th>지망</th></tr></thead><tbody>';
   html += rows.map(r => {
-    const rank = rankOfChoice(r.member, r.topicId);
-    const rankLabel = rank ? `<span class="rank-badge rank-${rank}">${rank}지망</span>` : '';
+    const isForced = lastResult.forced && lastResult.forced[r.member.studentId];
+    const rank = isForced ? null : rankOfChoice(r.member, r.topicId);
+    const rankLabel = isForced
+      ? `<span class="rank-badge rank-none">지망 외 배정</span>`
+      : (rank ? `<span class="rank-badge rank-${rank}">${rank}지망</span>` : '');
     const topicCell = r.isFirstOfTopic
       ? `<td class="topic-cell" rowspan="${r.count}">${esc(adopted[r.topicId].label)} (${r.count}/${lastTargets[r.topicId]}명, 정원 ${capacities[r.topicId]}명)</td>`
       : '';
-    return `<tr class="rank-${rank || ''}">${topicCell}<td>${esc(r.member.num)}</td><td>${esc(r.member.name)}</td><td>${rankLabel}</td></tr>`;
+    return `<tr class="rank-${isForced ? 'none' : (rank || '')}">${topicCell}<td>${esc(r.member.num)}</td><td>${esc(r.member.name)}</td><td>${rankLabel}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">배정된 학생이 없습니다.</td></tr>';
   html += '</tbody></table>';
 
