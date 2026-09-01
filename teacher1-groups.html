@@ -36,6 +36,15 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
 .missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .missing-chip { background: var(--danger-soft); color: var(--danger); border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; }
+.unapplied-list { display: flex; flex-direction: column; gap: 6px; }
+.unapplied-row { display: flex; align-items: center; gap: 8px; background: var(--danger-soft); border-radius: 10px; padding: 6px 10px; }
+.unapplied-row .unapplied-name { font-size: 0.85rem; font-weight: 600; color: var(--danger); flex: 1; }
+.unapplied-row select { font-size: 0.8rem; padding: 5px 6px; }
+.unapplied-row button {
+  padding: 6px 12px; border: none; border-radius: 6px; background: var(--accent); color: #fff;
+  font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.unapplied-row .assigned-tag { font-size: 0.74rem; color: var(--accent); white-space: nowrap; }
 
 .current-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .current-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; }
@@ -190,14 +199,48 @@ function renderUnappliedStatus() {
   if (!missing.length) {
     html += '<div class="ok-msg show">전원 신청했습니다 🎉</div>';
   } else {
-    html += `<div class="missing-list">${missing.map(s => `<span class="missing-chip">${esc(s.num)}번 ${esc(s.name)}</span>`).join('')}</div>`;
+    html += '<p class="hint">지망을 안 낸 학생도 아래에서 주제를 골라 바로 모둠에 넣을 수 있습니다.</p>';
+    const adopted = currentAdopted();
+    const topicOptionsFor = (currentId) => `<option value="">모둠 선택</option>` + Object.keys(adopted).map(id =>
+      `<option value="${id}"${id === currentId ? ' selected' : ''}>${esc(adopted[id].label)}</option>`
+    ).join('');
+    html += '<div class="unapplied-list">' + missing.map(s => {
+      const fg = finalGroups[s.id];
+      const currentTopic = (fg && String(fg.ban) === selectedBan) ? fg.topicId : '';
+      return `<div class="unapplied-row">
+        <span class="unapplied-name">${esc(s.num)}번 ${esc(s.name)}</span>
+        <select id="manual-${s.id}">${topicOptionsFor(currentTopic)}</select>
+        <button onclick="assignUnapplied('${s.id}')">${currentTopic ? '변경' : '배정'}</button>
+        ${currentTopic ? '<span class="assigned-tag">✓ 배정됨</span>' : ''}
+      </div>`;
+    }).join('') + '</div>';
   }
   wrap.innerHTML = html;
 }
 
+window.assignUnapplied = async function(studentId) {
+  const sel = document.getElementById('manual-' + studentId);
+  const topicId = sel.value;
+  const adopted = currentAdopted();
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups/${studentId}.json`;
+  if (!topicId) {
+    await fetch(base, { method: 'DELETE' });
+    delete finalGroups[studentId];
+  } else {
+    const payload = { topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() };
+    await fetch(base, { method: 'PUT', body: JSON.stringify(payload) });
+    finalGroups[studentId] = payload;
+  }
+  renderUnappliedStatus();
+  renderCurrentGroups();
+};
+
 function memberLabel(studentId) {
   const p = preferences[studentId];
-  return p ? `${esc(p.num)}번 ${esc(p.name)}` : esc(studentId);
+  if (p) return `${esc(p.num)}번 ${esc(p.name)}`;
+  const r = roster[studentId]; // 지망 미신청 상태로 수동 배정된 학생은 preferences가 없으므로 명단에서 이름을 가져온다
+  if (r) return `${esc(r.num)}번 ${esc(r.name)} (지망 미신청)`;
+  return esc(studentId);
 }
 
 function renderCurrentGroups() {

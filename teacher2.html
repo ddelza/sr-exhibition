@@ -71,8 +71,9 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3;
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {}, titleAll = {};
+let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {}, titleAll = {}, roster = {};
 let selectedBan = '';
 let expanded = {}; // topicId -> bool
 
@@ -150,7 +151,10 @@ window.onBanChange = function() {
 
 function memberLabel(studentId) {
   const p = preferences[studentId];
-  return p ? `${esc(p.num)}번 ${esc(p.name)}` : esc(studentId);
+  if (p) return `${esc(p.num)}번 ${esc(p.name)}`;
+  const r = roster[studentId];
+  if (r) return `${esc(r.num)}번 ${esc(r.name)} (지망 미신청)`;
+  return esc(studentId);
 }
 
 function itemMetaText(it) {
@@ -222,9 +226,18 @@ window.saveFeedback = async function(topicId) {
   if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
 };
 
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
 async function init() {
   try {
     YEAR = await loadYear();
+    await loadRoster();
     await loadAll();
     renderBanSelect();
     render();
