@@ -22,6 +22,18 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
   font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .saved-flash { color: var(--accent); font-size: 0.72rem; margin-left: 6px; }
+
+.expand-btn {
+  width: 100%; padding: 8px; margin-bottom: 12px; border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.detail-wrap { margin-bottom: 12px; }
+.detail-field { background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.detail-field-label { font-size: 0.78rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.detail-item { font-size: 0.85rem; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.detail-item:last-child { border-bottom: none; }
+.detail-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+.detail-empty { font-size: 0.8rem; color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -62,6 +74,12 @@ const PASSWORD = 'byung0703!';
 let YEAR = null;
 let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {}, titleAll = {};
 let selectedBan = '';
+let expanded = {}; // topicId -> bool
+
+const FIELD_LABELS = [
+  ['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'],
+  ['steps', '실험과정'], ['precautions', '유의사항'], ['memo', '자유메모'],
+];
 
 function esc(str) {
   if (!str) return '';
@@ -135,6 +153,26 @@ function memberLabel(studentId) {
   return p ? `${esc(p.num)}번 ${esc(p.name)}` : esc(studentId);
 }
 
+function itemMetaText(it) {
+  const author = `작성자: ${esc(it.authorName)}`;
+  return it.lastEditor && it.lastEditor !== it.author ? `${author} · 최종수정자: ${esc(it.lastEditorName)}` : author;
+}
+
+function detailBlock(topicId) {
+  const groupItems = itemsAll[topicId] || {};
+  return FIELD_LABELS.map(([key, label]) => {
+    const list = Object.entries(groupItems[key] || {}).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+    const rows = list.map(([, it], i) => `<div class="detail-item">${key === 'steps' ? `${i + 1}. ` : '· '}${esc(it.text)}<div class="detail-meta">${itemMetaText(it)}</div></div>`).join('')
+      || '<div class="detail-empty">아직 없음</div>';
+    return `<div class="detail-field"><div class="detail-field-label">${label}</div>${rows}</div>`;
+  }).join('');
+}
+
+window.toggleExpand = function(topicId) {
+  expanded[topicId] = !expanded[topicId];
+  render();
+};
+
 function render() {
   const wrap = document.getElementById('groupList');
   const groups = {}; // topicId -> [studentId,...]
@@ -147,11 +185,6 @@ function render() {
     wrap.innerHTML = '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
     return;
   }
-
-  const FIELD_LABELS = [
-    ['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'],
-    ['steps', '실험과정'], ['precautions', '유의사항'], ['memo', '자유메모'],
-  ];
 
   wrap.innerHTML = topicIds.map(topicId => {
     const post = posts[topicId] || {};
@@ -169,6 +202,8 @@ function render() {
           return `<span class="status-chip ${n ? 'done' : 'todo'}">${label} ${n}개</span>`;
         }).join('')}
       </div>
+      <button class="expand-btn" onclick="toggleExpand('${topicId}')">${expanded[topicId] ? '▴ 접기' : '▾ 작성 내용 펼치기'}</button>
+      ${expanded[topicId] ? `<div class="detail-wrap">${detailBlock(topicId)}</div>` : ''}
       <div class="feedback-row">
         <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>
         <button onclick="saveFeedback('${topicId}')">저장</button>
