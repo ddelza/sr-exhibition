@@ -106,6 +106,7 @@ let finalGroups = {}; // { studentId: {topicId, topicLabel, ban, ts} }
 let capacities = {};
 let selectedBan = '';
 let lastResult = null; // { assigned: {studentId: topicId}, unassignedIds: [...] }
+let lastTargets = null; // 균형 배분으로 정해진 주제별 목표 인원 { [topicId]: number }
 
 function esc(str) {
   if (!str) return '';
@@ -307,19 +308,33 @@ async function saveCapacities() {
   await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/groupCapacity.json`, { method: 'PUT', body: JSON.stringify(newCap) });
 }
 
-// 배정 원칙 (사용자와 합의한 순서):
+// 배정 원칙 (사용자와 합의한 순서 — 모둠 인원 균형이 추가되면서 우선순위를 다시 정리함):
 //  1) 학생이 신청하지 않은 주제에는 절대 배정하지 않는다.
-//  2) 1지망 또는 2지망 안에서 배정되는 인원을 최대한 많게 한다.
-//  3) 2)를 만족하는 배정들 중에서, 1지망으로 배정되는 인원이 최대가 되게 한다.
+//  2) 모둠 인원 균형: 최종 모둠 중 가장 큰 인원과 가장 작은 인원의 차이가 1명 이하가 되도록 한다
+//     (2 이상 벌어지지 않게). 단, 어떤 주제를 아무도 1~3지망으로 고르지 않았다면 그 주제는 억지로
+//     채울 수 없으므로(1원칙과 충돌) 균형 계산에서 제외한다.
+//  3) 2)에서 정해진 인원 한도 안에서, 1지망 또는 2지망으로 배정되는 인원을 최대한 많게 한다.
+//  4) 3)을 만족하는 배정들 중에서, 1지망으로 배정되는 인원이 최대가 되게 한다.
 //
-// 1·2지망만으로 그래프를 만들고(1원칙 — 3지망/미신청 주제로는 애초에 간선을 만들지 않음),
-// 1지망 간선 비용 0, 2지망 간선 비용 1로 최소비용 최대유량(min-cost max-flow)을 구하면
-// "유량(=배정 인원) 최대화 → 그 안에서 비용(=2지망 사용) 최소화"라는 알고리즘 자체의 정의가
-// 그대로 2)·3) 원칙이 된다. 단순히 지망 순서대로 그리디하게 확정하면(이전 방식) 먼저 신청한
-// 학생이 자리를 선점해 전체 배정 인원이 오히려 줄어드는 경우가 있어서 이 방식으로 바꿨다.
+// 균형(2번)을 3·4번(선호도 최적화)보다 먼저 두는 이유: 균형은 "이 배정이 가능한가/불가능한가"를
+// 가르는 하드한 제약(모둠당 인원 상한)으로 다루는 게 논리적으로 가장 깔끔하다 — 상한을 먼저 정해두면
+// 그 안에서 선호도를 최적화하는 문제로 그대로 이어지고, 반대로 선호도를 먼저 최적화한 뒤에 인원을
+// 맞추려 하면 이미 확정된 1지망 배정을 다시 깨야 하는 경우가 생겨 "1지망 최대화"라는 4번 원칙과
+// 정면으로 충돌한다.
 //
-// 1·2지망으로 배정되지 못한 학생은, 3지망 주제에 남은 자리가 있으면(1·2지망 결과는 그대로 두고
-// 남는 자리만 사용) 그 자리에 한해 채운다. 그래도 안 되면 미배정으로 남긴다.
+// 구현: computeBalancedTargets()가 "이 주제를 1~3지망 중 하나로든 고른 학생 수"와 "교사가 정한
+// 정원" 중 작은 값을 각 주제의 실질 상한으로 두고, 가장 인원이 적은 주제부터 1명씩 채워나가는
+// 방식(물 채우기)으로 목표 인원을 정한다. 이렇게 나온 목표 인원을 기존의 최소비용최대유량
+// (1·2지망만으로 그래프를 만들고, 1지망 비용 0·2지망 비용 1로 "유량 최대 → 비용 최소"를 구하면
+// 그대로 3·4번 원칙이 됨)의 정원으로 그대로 사용한다.
+//
+// 1·2지망으로 배정되지 못한 학생은, 3지망 주제에 남은 자리가 있으면(목표 인원 안에서, 1·2지망
+// 결과는 그대로 두고 남는 자리만 사용) 채운다. 그래도 안 되면 미배정으로 남긴다.
+//
+// 주의: 목표 인원은 상한일 뿐 보장이 아니다 — 어떤 주제를 지망한 학생들이 전부 다른(더 우선순위
+// 높은) 주제로 먼저 배정돼버리면, 그 주제는 목표 인원만큼 못 채우고 작아질 수 있다. 이건 학생들이
+// 실제로 신청한 지망 안에서만 배정한다는 1원칙 때문에 생기는 어쩔 수 없는 한계라, 배정 후 실제
+// 인원 차이가 여전히 크면 화면에 안내하고 "현재 등록된 모둠"의 이동 드롭다운으로 수동 조정하게 한다.
 //
 // 동점 처리(예: 1지망만으로도 정원 초과)는 학번이나 제출시각 순이 아니라 매번 무작위로 섞은
 // 뒤에 배정한다 — 최소비용최대유량은 "배정 인원 최대, 그 안에서 1지망 최대"라는 총량만
@@ -332,6 +347,37 @@ function shuffled(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// 각 주제의 "목표 인원"을 정한다.
+// 1) 실질 상한(ceiling) = 교사가 정한 정원과, 그 주제를 1~3지망 중 하나로든 고른 학생 수(demand)
+//    중 작은 값. 아무도 고르지 않은 주제(demand 0)는 강제로 채울 학생이 없으니 애초에 제외한다.
+// 2) 그중 가장 작은 ceiling(minCeiling)이 이 반이 "다 같이 도달할 수 있는" 인원이다. 다른 주제가
+//    아무리 인기가 많아도 minCeiling짜리 주제는 그 이상 못 늘어나므로, 최대-최소 차이를 1 이하로
+//    맞추려면 나머지 주제도 minCeiling+1을 넘지 않게 캡을 씌워야 한다 — 그래서 모든 주제의 목표를
+//    min(자기 ceiling, minCeiling+1)로 정한다. 이러면 산술적으로 항상 차이 ≤ 1이 보장된다.
+// 인기 주제 쪽에서 이 캡 때문에 못 들어간 학생은 자기 2·3지망으로 넘어가거나(아래 3지망 채우기
+// 단계), 그래도 안 되면 미배정으로 남아 화면에 표시된다 — 특정 주제 하나의 인원이 극단적으로
+// 적어서 다른 모든 주제가 크게 제한된다면, 그 주제의 정원을 0으로 두어 이번 배정에서 빼는 것도
+// 방법이라고 안내한다(위 "모둠(주제)별 정원"에서 조정).
+function computeBalancedTargets(topicIds, students, cap) {
+  const demand = {};
+  topicIds.forEach(id => {
+    demand[id] = students.filter(s => s.choice1 === id || s.choice2 === id || s.choice3 === id).length;
+  });
+  const active = topicIds.filter(id => (cap[id] || 0) > 0 && demand[id] > 0);
+
+  const ceiling = {};
+  active.forEach(id => { ceiling[id] = Math.min(cap[id] || 0, demand[id]); });
+
+  const target = {};
+  topicIds.forEach(id => { target[id] = 0; });
+  if (!active.length) return target;
+
+  const minCeiling = Math.min(...active.map(id => ceiling[id]));
+  const maxAllowed = minCeiling + 1;
+  active.forEach(id => { target[id] = Math.min(ceiling[id], maxAllowed); });
+  return target;
 }
 
 function assign(studentsIn, topicIds, cap) {
@@ -426,7 +472,8 @@ window.runAssign = async function() {
     lastResult = null;
     return;
   }
-  lastResult = assign(students, topicIds, capacities);
+  lastTargets = computeBalancedTargets(topicIds, students, capacities);
+  lastResult = assign(students, topicIds, lastTargets);
   renderResult(students);
 };
 
@@ -452,13 +499,19 @@ function renderResult(students) {
     return members.map((m, i) => ({ topicId, member: m, isFirstOfTopic: i === 0, count: members.length }));
   });
 
+  const sizesUsed = topicIds.map(id => rows.filter(r => r.topicId === id).length).filter(n => n > 0);
+  const sizeDiff = sizesUsed.length ? Math.max(...sizesUsed) - Math.min(...sizesUsed) : 0;
+
   let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
+  html += sizeDiff <= 1
+    ? `<div class="ok-msg show">모둠 인원이 균형있게 배정되었습니다 (최대-최소 차이 ${sizeDiff}명).</div>`
+    : `<div class="unassigned-box">일부 주제는 지망자가 적어 목표 인원만큼 채우지 못해, 모둠 간 인원 차이가 ${sizeDiff}명입니다. 아래 "현재 등록된 모둠"에서 등록 후 수동으로 옮길 수 있습니다.</div>`;
   html += '<table class="assign-table"><thead><tr><th>모둠(주제)</th><th>번호</th><th>이름</th><th>지망</th></tr></thead><tbody>';
   html += rows.map(r => {
     const rank = rankOfChoice(r.member, r.topicId);
     const rankLabel = rank ? `<span class="rank-badge rank-${rank}">${rank}지망</span>` : '';
     const topicCell = r.isFirstOfTopic
-      ? `<td class="topic-cell" rowspan="${r.count}">${esc(adopted[r.topicId].label)} (${r.count}/${capacities[r.topicId]}명)</td>`
+      ? `<td class="topic-cell" rowspan="${r.count}">${esc(adopted[r.topicId].label)} (${r.count}/${lastTargets[r.topicId]}명, 정원 ${capacities[r.topicId]}명)</td>`
       : '';
     return `<tr class="rank-${rank || ''}">${topicCell}<td>${esc(r.member.num)}</td><td>${esc(r.member.name)}</td><td>${rankLabel}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">배정된 학생이 없습니다.</td></tr>';
