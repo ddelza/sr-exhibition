@@ -110,24 +110,6 @@ async function loadYear() {
   return (cfg && cfg.year) || new Date().getFullYear();
 }
 
-function withFocusPreserved(renderFn) {
-  const active = document.activeElement;
-  const id = active && active.id;
-  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
-  const value = isTextInput ? active.value : null;
-  const selStart = isTextInput ? active.selectionStart : null;
-  const selEnd = isTextInput ? active.selectionEnd : null;
-  renderFn();
-  if (id) {
-    const el = document.getElementById(id);
-    if (el && isTextInput) {
-      el.value = value;
-      if (typeof selStart === 'number') { try { el.setSelectionRange(selStart, selEnd); } catch (e) {} }
-      el.focus();
-    }
-  }
-}
-
 async function loadAll() {
   const [bl, fb] = await Promise.all([
     fetch(base + '/blocks/' + topicId + '.json').then(r => r.json()),
@@ -135,7 +117,11 @@ async function loadAll() {
   ]);
   blocks = bl || {};
   feedback = fb || null;
-  withFocusPreserved(render);
+  // 블록을 수정하는 중에는(특히 실험결과표·그래프처럼 행이 여러 개라 id로 포커스를
+  // 복원할 수 없는 입력칸들) 8초 자동 새로고침이 화면을 다시 그려서 입력 중이던
+  // 내용을 지워버리면 안 되므로, 편집 중에는 데이터만 받아두고 화면은 그대로 둔다.
+  // 저장/취소하면 그 시점에 render()가 다시 호출되어 최신 상태로 반영된다.
+  if (editingBlockId === null) render();
 }
 
 // ── 그래프 SVG ──────────────────────────────
