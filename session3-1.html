@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3차시 · 실험 보고서 작성 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.feedback-banner { background: var(--accent); color: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.88rem; line-height: 1.5; }
+.feedback-banner b { display: block; font-size: 0.76rem; opacity: 0.85; margin-bottom: 4px; }
+
+.summary-toggle { width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: 0.84rem; font-weight: 600; cursor: pointer; margin-bottom: 14px; }
+.summary-field { margin-bottom: 10px; }
+.summary-field .label { font-size: 0.76rem; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
+.summary-field .items { font-size: 0.83rem; line-height: 1.6; }
+
+.block-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.block-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.block-type-tag { font-size: 0.78rem; font-weight: 700; color: var(--accent); }
+.block-btns { display: flex; gap: 4px; }
+.block-btns button { background: var(--bg); border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.block-btns button:hover { color: var(--accent); }
+.block-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; }
+.block-caption { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+.block-text { font-size: 0.88rem; line-height: 1.6; white-space: pre-wrap; }
+.block-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.block-table th, .block-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+.block-table th { background: var(--bg); font-size: 0.78rem; }
+
+.block-edit input[type=text], .block-edit input[type=number], .block-edit input[type=url], .block-edit textarea, .block-edit select {
+  width: 100%; padding: 9px 10px; font-size: 0.88rem; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; margin-bottom: 8px; background: var(--surface); color: var(--text);
+}
+.block-edit textarea { min-height: 80px; resize: vertical; }
+.row-pair { display: flex; gap: 6px; margin-bottom: 6px; }
+.row-pair input { margin-bottom: 0; }
+.row-pair button { background: none; border: none; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; padding: 0 6px; }
+.small-add-btn { padding: 7px 12px; border: 1.5px dashed var(--border); border-radius: 8px; background: none; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; margin-bottom: 8px; }
+.ft-size-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.ft-size-row input { width: 70px; margin-bottom: 0; }
+.ft-grid { display: grid; gap: 4px; margin-bottom: 8px; overflow-x: auto; }
+.ft-grid input { margin-bottom: 0; font-size: 0.8rem; padding: 6px; }
+.block-edit-btns { display: flex; gap: 8px; margin-top: 6px; }
+.block-edit-btns button { padding: 9px 16px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+.block-edit-btns .save-btn { background: var(--accent); color: #fff; }
+.block-edit-btns .cancel-btn { background: var(--bg); color: var(--text-muted); }
+
+.add-block-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.add-block-row button { flex: 1; min-width: 100px; padding: 12px 8px; border: 1.5px dashed var(--accent); border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 0.82rem; font-weight: 700; cursor: pointer; }
+
+.photo-preview { max-width: 100%; border-radius: 10px; margin-bottom: 8px; display: block; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📑 3차시 · 실험 보고서 작성하기</h1>
+    <p>사진, 그래프, 표, 링크, 글 블록을 자유롭게 추가·배치해서 우리 모둠의 보고서를 완성하자. 모둠원 누구나 추가·수정·삭제할 수 있다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let s1base = null, s2base = null, base = null; // base = s3
+let topicId = null;
+let post = {};
+let groupmates = [];
+let s2Title = null;
+let s2Items = {};
+let blocks = {};
+let feedback = null;
+let editingBlockId = null; // 'new' 이면 새 블록 작성 중
+let newBlockDraft = null;
+let pendingImageData = {};
+let summaryOpen = false;
+
+const BLOCK_LABELS = { photo: '📷 사진', graph: '📈 그래프', resultsTable: '🧪 실험 결과표', freeTable: '▦ 자유 표', link: '🔗 링크', text: '📝 텍스트' };
+const S2_FIELD_DEFS = [
+  ['materials', '준비물'], ['measurement', '변인 측정 방법'], ['controlledVars', '통제변인'],
+  ['steps', '실험 과정'], ['precautions', '안전·유의사항'], ['memo', '자유 메모'],
+];
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+async function loadYear() {
+  const res = await fetch(DB_URL + '/config/current.json');
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+function withFocusPreserved(renderFn) {
+  const active = document.activeElement;
+  const id = active && active.id;
+  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+  const value = isTextInput ? active.value : null;
+  const selStart = isTextInput ? active.selectionStart : null;
+  const selEnd = isTextInput ? active.selectionEnd : null;
+  renderFn();
+  if (id) {
+    const el = document.getElementById(id);
+    if (el && isTextInput) {
+      el.value = value;
+      if (typeof selStart === 'number') { try { el.setSelectionRange(selStart, selEnd); } catch (e) {} }
+      el.focus();
+    }
+  }
+}
+
+async function loadAll() {
+  const [bl, fb] = await Promise.all([
+    fetch(base + '/blocks/' + topicId + '.json').then(r => r.json()),
+    fetch(base + '/feedback/' + topicId + '.json').then(r => r.json()),
+  ]);
+  blocks = bl || {};
+  feedback = fb || null;
+  withFocusPreserved(render);
+}
+
+// ── 그래프 SVG ──────────────────────────────
+function renderChartSVG(b) {
+  const pts = (b.points || []).map(function(p) { return { x: Number(p.x), y: Number(p.y) }; })
+    .filter(function(p) { return !isNaN(p.x) && !isNaN(p.y); });
+  if (!pts.length) return '<div class="empty-state">데이터를 입력하면 그래프가 나타납니다.</div>';
+  const W = 300, H = 190, PAD = 34;
+  const xs = pts.map(function(p) { return p.x; }), ys = pts.map(function(p) { return p.y; });
+  let xMin = Math.min.apply(null, xs), xMax = Math.max.apply(null, xs);
+  let yMin = Math.min(0, Math.min.apply(null, ys)), yMax = Math.max.apply(null, ys);
+  if (xMin === xMax) { xMin -= 1; xMax += 1; }
+  if (yMin === yMax) { yMax += 1; }
+  const sx = function(x) { return PAD + (x - xMin) / (xMax - xMin) * (W - 2 * PAD); };
+  const sy = function(y) { return H - PAD - (y - yMin) / (yMax - yMin) * (H - 2 * PAD); };
+  let inner = '<line x1="' + PAD + '" y1="' + (H - PAD) + '" x2="' + (W - PAD) + '" y2="' + (H - PAD) + '" stroke="#999"/>' +
+    '<line x1="' + PAD + '" y1="' + PAD + '" x2="' + PAD + '" y2="' + (H - PAD) + '" stroke="#999"/>';
+  if (b.chartType === 'bar') {
+    const bw = (W - 2 * PAD) / pts.length * 0.6;
+    inner += pts.map(function(p, i) {
+      const cx = PAD + (i + 0.5) * (W - 2 * PAD) / pts.length;
+      const y0 = sy(0), y1 = sy(p.y);
+      return '<rect x="' + (cx - bw / 2) + '" y="' + Math.min(y0, y1) + '" width="' + bw + '" height="' + Math.abs(y1 - y0) + '" fill="var(--accent)"/>';
+    }).join('');
+  } else {
+    inner += '<polyline points="' + pts.map(function(p) { return sx(p.x) + ',' + sy(p.y); }).join(' ') + '" fill="none" stroke="var(--accent)" stroke-width="2"/>';
+    inner += pts.map(function(p) { return '<circle cx="' + sx(p.x) + '" cy="' + sy(p.y) + '" r="3.5" fill="var(--accent)"/>'; }).join('');
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:var(--bg);border-radius:8px">' + inner + '</svg>';
+}
+
+// ── 블록 보기(view) 렌더 ──────────────────────────────
+function viewBlockContent(b) {
+  if (b.type === 'photo') {
+    return (b.imageData ? '<img class="photo-preview" src="' + b.imageData + '">' : '<div class="empty-state">사진 없음</div>') +
+      (b.caption ? '<div class="block-caption">' + esc(b.caption) + '</div>' : '');
+  }
+  if (b.type === 'graph') {
+    return renderChartSVG(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
+  }
+  if (b.type === 'resultsTable') {
+    const rows = b.rows || [];
+    return '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' +
+      (rows.map(function(r) { return '<tr><td>' + esc(r.condition) + '</td><td>' + esc(r.result) + '</td></tr>'; }).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table>';
+  }
+  if (b.type === 'freeTable') {
+    const rowsN = b.rows || 0, colsN = b.cols || 0, cells = b.cells || {};
+    let html = '<table class="block-table">';
+    for (let r = 0; r < rowsN; r++) {
+      html += '<tr>';
+      for (let c = 0; c < colsN; c++) html += '<td>' + esc(cells[r + '-' + c] || '') + '</td>';
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+  if (b.type === 'link') {
+    return '<a href="' + escAttr(b.url || '#') + '" target="_blank" rel="noopener">' + esc(b.description || b.url || '(링크 없음)') + '</a>';
+  }
+  if (b.type === 'text') {
+    return '<div class="block-text">' + esc(b.content || '') + '</div>';
+  }
+  return '';
+}
+
+// ── 블록 수정(edit) 폼 렌더 ──────────────────────────────
+function editBlockForm(id, b) {
+  const type = b.type;
+  let html = '<div class="block-edit">';
+  if (type === 'photo') {
+    html += '<input type="file" accept="image/*" onchange="handlePhotoFile(\'' + id + '\', this)">' +
+      '<img class="photo-preview" id="photoPreview-' + id + '" src="' + (b.imageData || '') + '" style="' + (b.imageData ? '' : 'display:none') + '">' +
+      '<input type="text" id="photoCaption-' + id + '" placeholder="사진 설명" value="' + escAttr(b.caption || '') + '">';
+  } else if (type === 'graph') {
+    const pts = (b.points && b.points.length ? b.points : [{ x: '', y: '' }]);
+    html += '<input type="text" id="graphX-' + id + '" placeholder="x축 이름(예: 온도)" value="' + escAttr(b.xLabel || '') + '">' +
+      '<input type="text" id="graphY-' + id + '" placeholder="y축 이름(예: 반응시간)" value="' + escAttr(b.yLabel || '') + '">' +
+      '<select id="graphType-' + id + '"><option value="line"' + (b.chartType !== 'bar' ? ' selected' : '') + '>선그래프</option><option value="bar"' + (b.chartType === 'bar' ? ' selected' : '') + '>막대그래프</option></select>' +
+      '<div id="graphRows-' + id + '">' + pts.map(function(p) {
+        return '<div class="row-pair"><input type="text" class="gx" placeholder="x값" value="' + escAttr(p.x) + '"><input type="text" class="gy" placeholder="y값" value="' + escAttr(p.y) + '"><button onclick="this.parentElement.remove()">✕</button></div>';
+      }).join('') + '</div>' +
+      '<button type="button" class="small-add-btn" onclick="addGraphRow(\'' + id + '\')">+ 데이터 추가</button>';
+  } else if (type === 'resultsTable') {
+    const rows = (b.rows && b.rows.length ? b.rows : [{ condition: '', result: '' }]);
+    html += '<div id="resultsRows-' + id + '">' + rows.map(function(r) {
+      return '<div class="row-pair"><input type="text" class="rc" placeholder="실험 조건" value="' + escAttr(r.condition) + '"><input type="text" class="rr" placeholder="실험 결과" value="' + escAttr(r.result) + '"><button onclick="this.parentElement.remove()">✕</button></div>';
+    }).join('') + '</div>' +
+    '<button type="button" class="small-add-btn" onclick="addResultsRow(\'' + id + '\')">+ 행 추가</button>';
+  } else if (type === 'freeTable') {
+    html += '<div class="ft-size-row">행 <input type="number" min="1" max="12" id="ftRows-' + id + '" value="' + (b.rows || 2) + '" onchange="rebuildFreeTable(\'' + id + '\')">' +
+      '열 <input type="number" min="1" max="10" id="ftCols-' + id + '" value="' + (b.cols || 2) + '" onchange="rebuildFreeTable(\'' + id + '\')"></div>' +
+      '<div id="ftGridWrap-' + id + '">' + freeTableGridHtml(id, b.rows || 2, b.cols || 2, b.cells || {}) + '</div>';
+  } else if (type === 'link') {
+    html += '<input type="url" id="linkUrl-' + id + '" placeholder="https://..." value="' + escAttr(b.url || '') + '">' +
+      '<input type="text" id="linkDesc-' + id + '" placeholder="링크 설명" value="' + escAttr(b.description || '') + '">';
+  } else if (type === 'text') {
+    html += '<textarea id="textContent-' + id + '" placeholder="자유롭게 서술해보자 (분석, 결론, 느낀 점 등)">' + esc(b.content || '') + '</textarea>';
+  }
+  html += '<div class="block-edit-btns"><button class="save-btn" onclick="saveBlock(\'' + id + '\')">저장</button><button class="cancel-btn" onclick="cancelEditBlock()">취소</button></div>';
+  html += '</div>';
+  return html;
+}
+
+function freeTableGridHtml(id, rowsN, colsN, cells) {
+  let html = '<div class="ft-grid" style="grid-template-columns:repeat(' + colsN + ',1fr)">';
+  for (let r = 0; r < rowsN; r++) {
+    for (let c = 0; c < colsN; c++) {
+      html += '<input type="text" id="ftCell-' + id + '-' + r + '-' + c + '" value="' + escAttr(cells[r + '-' + c] || '') + '">';
+    }
+  }
+  return html + '</div>';
+}
+
+window.rebuildFreeTable = function(id) {
+  const oldRowsEl = document.querySelectorAll('#ftGridWrap-' + id + ' .ft-grid input');
+  const oldCells = {};
+  const wrap = document.getElementById('ftGridWrap-' + id);
+  const prevCols = wrap.querySelector('.ft-grid').style.gridTemplateColumns.split(' ').length;
+  oldRowsEl.forEach(function(el, i) {
+    const r = Math.floor(i / prevCols), c = i % prevCols;
+    oldCells[r + '-' + c] = el.value;
+  });
+  const rowsN = Number(document.getElementById('ftRows-' + id).value) || 1;
+  const colsN = Number(document.getElementById('ftCols-' + id).value) || 1;
+  wrap.innerHTML = freeTableGridHtml(id, rowsN, colsN, oldCells);
+};
+
+window.addGraphRow = function(id) {
+  const wrap = document.getElementById('graphRows-' + id);
+  const div = document.createElement('div');
+  div.className = 'row-pair';
+  div.innerHTML = '<input type="text" class="gx" placeholder="x값"><input type="text" class="gy" placeholder="y값"><button onclick="this.parentElement.remove()">✕</button>';
+  wrap.appendChild(div);
+};
+window.addResultsRow = function(id) {
+  const wrap = document.getElementById('resultsRows-' + id);
+  const div = document.createElement('div');
+  div.className = 'row-pair';
+  div.innerHTML = '<input type="text" class="rc" placeholder="실험 조건"><input type="text" class="rr" placeholder="실험 결과"><button onclick="this.parentElement.remove()">✕</button>';
+  wrap.appendChild(div);
+};
+
+window.handlePhotoFile = function(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const maxW = 900;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      pendingImageData[id] = canvas.toDataURL('image/jpeg', 0.7);
+      const preview = document.getElementById('photoPreview-' + id);
+      if (preview) { preview.src = pendingImageData[id]; preview.style.display = 'block'; }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+// ── 블록 CRUD ──────────────────────────────
+window.addBlockOfType = function(type) {
+  newBlockDraft = Object.assign({ type: type }, emptyContentFor(type));
+  editingBlockId = 'new';
+  render();
+  const el = document.getElementById('block-new');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+function emptyContentFor(type) {
+  if (type === 'photo') return { caption: '', imageData: '' };
+  if (type === 'graph') return { xLabel: '', yLabel: '', chartType: 'line', points: [{ x: '', y: '' }] };
+  if (type === 'resultsTable') return { rows: [{ condition: '', result: '' }] };
+  if (type === 'freeTable') return { rows: 2, cols: 2, cells: {} };
+  if (type === 'link') return { url: '', description: '' };
+  if (type === 'text') return { content: '' };
+  return {};
+}
+
+window.startEditBlock = function(id) {
+  editingBlockId = id;
+  render();
+};
+
+window.cancelEditBlock = function() {
+  if (editingBlockId === 'new') newBlockDraft = null;
+  delete pendingImageData[editingBlockId];
+  editingBlockId = null;
+  render();
+};
+
+window.saveBlock = async function(id) {
+  const isNew = id === 'new';
+  const type = isNew ? newBlockDraft.type : blocks[id].type;
+  let content = {};
+
+  if (type === 'photo') {
+    const imageData = pendingImageData[id] || (isNew ? '' : blocks[id].imageData) || '';
+    if (!imageData) { alert('사진을 선택해주세요.'); return; }
+    content = { caption: document.getElementById('photoCaption-' + id).value.trim(), imageData: imageData };
+  } else if (type === 'graph') {
+    const rows = document.querySelectorAll('#graphRows-' + id + ' .row-pair');
+    const points = [...rows].map(function(row) {
+      return { x: row.querySelector('.gx').value.trim(), y: row.querySelector('.gy').value.trim() };
+    }).filter(function(p) { return p.x !== '' || p.y !== ''; });
+    content = {
+      xLabel: document.getElementById('graphX-' + id).value.trim(),
+      yLabel: document.getElementById('graphY-' + id).value.trim(),
+      chartType: document.getElementById('graphType-' + id).value,
+      points: points,
+    };
+  } else if (type === 'resultsTable') {
+    const rows = document.querySelectorAll('#resultsRows-' + id + ' .row-pair');
+    content = { rows: [...rows].map(function(row) {
+      return { condition: row.querySelector('.rc').value.trim(), result: row.querySelector('.rr').value.trim() };
+    }).filter(function(r) { return r.condition !== '' || r.result !== ''; }) };
+  } else if (type === 'freeTable') {
+    const rowsN = Number(document.getElementById('ftRows-' + id).value) || 1;
+    const colsN = Number(document.getElementById('ftCols-' + id).value) || 1;
+    const cells = {};
+    for (let r = 0; r < rowsN; r++) for (let c = 0; c < colsN; c++) {
+      const el = document.getElementById('ftCell-' + id + '-' + r + '-' + c);
+      cells[r + '-' + c] = el ? el.value : '';
+    }
+    content = { rows: rowsN, cols: colsN, cells: cells };
+  } else if (type === 'link') {
+    content = {
+      url: document.getElementById('linkUrl-' + id).value.trim(),
+      description: document.getElementById('linkDesc-' + id).value.trim(),
+    };
+  } else if (type === 'text') {
+    content = { content: document.getElementById('textContent-' + id).value.trim() };
+  }
+
+  const now = Date.now();
+  if (isNew) {
+    const payload = Object.assign({
+      type: type, order: Object.keys(blocks).length,
+      author: student.id, authorName: student.name, lastEditor: student.id, lastEditorName: student.name,
+      createdAt: now, updatedAt: now,
+    }, content);
+    await fetch(base + '/blocks/' + topicId + '.json', { method: 'POST', body: JSON.stringify(payload) });
+    newBlockDraft = null;
+  } else {
+    const original = blocks[id];
+    const payload = Object.assign({
+      type: original.type, order: original.order,
+      author: original.author, authorName: original.authorName,
+      lastEditor: student.id, lastEditorName: student.name,
+      createdAt: original.createdAt, updatedAt: now,
+    }, content);
+    await fetch(base + '/blocks/' + topicId + '/' + id + '.json', { method: 'PUT', body: JSON.stringify(payload) });
+  }
+  editingBlockId = null;
+  delete pendingImageData[id];
+  await loadAll();
+};
+
+window.deleteBlock = async function(id) {
+  if (!confirm('이 블록을 삭제할까요?')) return;
+  await fetch(base + '/blocks/' + topicId + '/' + id + '.json', { method: 'DELETE' });
+  await loadAll();
+};
+
+window.moveBlock = async function(id, dir) {
+  const sorted = Object.entries(blocks).sort(function(a, b) { return (a[1].order || 0) - (b[1].order || 0); });
+  const idx = sorted.findIndex(function(x) { return x[0] === id; });
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= sorted.length) return;
+  const tmp = sorted[idx];
+  sorted[idx] = sorted[swapIdx];
+  sorted[swapIdx] = tmp;
+  const writes = sorted.map(function(entry, i) {
+    return fetch(base + '/blocks/' + topicId + '/' + entry[0] + '/order.json', { method: 'PUT', body: JSON.stringify(i) });
+  });
+  await Promise.all(writes);
+  await loadAll();
+};
+
+// ── 렌더 ──────────────────────────────
+function blockMetaText(b) {
+  const author = '작성: ' + esc(b.authorName);
+  return b.lastEditor && b.lastEditor !== b.author ? author + ' · 최종수정: ' + esc(b.lastEditorName) : author;
+}
+
+function s2SummaryHtml() {
+  return '<div class="group-card">' +
+    '<h2>' + (s2Title && s2Title.text ? esc(s2Title.text) : '(실험 제목 미정)') + '</h2>' +
+    '<div class="post-hypo"><b>질문</b> ' + esc(post.question) + '<br><b>독립변인</b> ' + esc(post.iv) + ' · <b>종속변인</b> ' + esc(post.dv) + '<br>' + esc(post.hypothesis) + '</div>' +
+    '<button class="summary-toggle" onclick="toggleSummary()">' + (summaryOpen ? '▴ 2차시 요약 접기' : '▾ 2차시 요약 펼치기 (준비물·실험과정 등)') + '</button>' +
+    (summaryOpen ? summaryDetailHtml() : '') +
+    '</div>';
+}
+
+function summaryDetailHtml() {
+  let html = '';
+  S2_FIELD_DEFS.forEach(function(def) {
+    const items = Object.values((s2Items[def[0]] || {}));
+    if (!items.length) return;
+    html += '<div class="summary-field"><div class="label">' + def[1] + '</div><div class="items">' +
+      items.map(function(it) { return esc(it.text); }).join('<br>') + '</div></div>';
+  });
+  return html || '<div class="empty-state">2차시 내용이 아직 없습니다.</div>';
+}
+window.toggleSummary = function() { summaryOpen = !summaryOpen; render(); };
+
+function render() {
+  const sortedIds = Object.keys(blocks).sort(function(a, b) { return (blocks[a].order || 0) - (blocks[b].order || 0); });
+
+  let html = (feedback && feedback.text ? '<div class="feedback-banner"><b>선생님 피드백</b>' + esc(feedback.text) + '</div>' : '');
+  html += s2SummaryHtml();
+  html += '<div class="group-card"><div class="member-list">모둠원: ' + groupmates.map(function(m) {
+    return '<span class="' + (m.studentId === student.id ? 'me' : '') + '">' + esc(m.num) + '번 ' + esc(m.name) + '</span>';
+  }).join(', ') + '</div></div>';
+
+  sortedIds.forEach(function(id, i) {
+    const b = blocks[id];
+    html += blockCardHtml(id, b, i === 0, i === sortedIds.length - 1);
+  });
+
+  if (editingBlockId === 'new' && newBlockDraft) {
+    html += '<div class="block-card" id="block-new">' +
+      '<div class="block-header"><span class="block-type-tag">' + BLOCK_LABELS[newBlockDraft.type] + ' (새 블록)</span></div>' +
+      editBlockForm('new', newBlockDraft) + '</div>';
+  }
+
+  html += '<div class="group-card"><h2>+ 블록 추가</h2><div class="add-block-row">' +
+    Object.keys(BLOCK_LABELS).map(function(t) { return '<button onclick="addBlockOfType(\'' + t + '\')">' + BLOCK_LABELS[t] + '</button>'; }).join('') +
+    '</div></div>';
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function blockCardHtml(id, b, isFirst, isLast) {
+  const editing = editingBlockId === id;
+  return '<div class="block-card" id="block-' + id + '">' +
+    '<div class="block-header">' +
+      '<span class="block-type-tag">' + BLOCK_LABELS[b.type] + '</span>' +
+      '<span class="block-btns">' +
+        (isFirst ? '' : '<button onclick="moveBlock(\'' + id + '\',-1)">▲</button>') +
+        (isLast ? '' : '<button onclick="moveBlock(\'' + id + '\',1)">▼</button>') +
+        '<button onclick="startEditBlock(\'' + id + '\')">수정</button>' +
+        '<button onclick="deleteBlock(\'' + id + '\')">삭제</button>' +
+      '</span>' +
+    '</div>' +
+    (editing ? editBlockForm(id, b) : (viewBlockContent(b) + '<div class="block-meta">' + blockMetaText(b) + '</div>')) +
+    '</div>';
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    s1base = DB_URL + '/years/' + YEAR + '/exhibition/s1';
+    s2base = DB_URL + '/years/' + YEAR + '/exhibition/s2';
+    base = DB_URL + '/years/' + YEAR + '/exhibition/s3';
+
+    const mine = await fetch(s1base + '/finalGroups/' + student.id + '.json').then(function(r) { return r.json(); });
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const [postRes, finalAllRes, prefAllRes, titleRes, itemsRes] = await Promise.all([
+      fetch(s1base + '/posts/' + topicId + '.json').then(function(r) { return r.json(); }),
+      fetch(s1base + '/finalGroups.json').then(function(r) { return r.json(); }),
+      fetch(s1base + '/preferences.json').then(function(r) { return r.json(); }),
+      fetch(s2base + '/title/' + topicId + '.json').then(function(r) { return r.json(); }),
+      fetch(s2base + '/items/' + topicId + '.json').then(function(r) { return r.json(); }),
+    ]);
+    post = postRes || {};
+    s2Title = titleRes || null;
+    s2Items = itemsRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(function(e) { return e[1].topicId === topicId; })
+      .map(function(e) { return { studentId: e[0], num: (prefAll[e[0]] || {}).num, name: (prefAll[e[0]] || {}).name || e[0] }; })
+      .sort(function(a, b) { return (a.num || 0) - (b.num || 0); });
+
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = '<div class="empty-state">불러오기 실패: ' + esc(e.message || e) + '</div>';
+  }
+})();
+</script>
+</body>
+</html>
