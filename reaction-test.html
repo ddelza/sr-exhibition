@@ -96,6 +96,11 @@ input[type=range]:disabled { opacity: 0.5; }
       <input type="range" id="freqRange" min="0" max="8" step="1" value="3">
     </div>
     <p class="hint">음량을 0%로 두면 청각 자극이 나오지 않습니다. 시각·청각 모두 켜져 있으면 같은 순간에 함께 제시됩니다.</p>
+    <div class="config-row">
+      <label class="field-label" for="vibrateToggle"><span><input type="checkbox" id="vibrateToggle" style="width:auto;margin-right:6px;vertical-align:middle"> 촉각 자극 (진동)</span></label>
+      <p class="hint" id="vibrateSupportHint"></p>
+      <p class="hint">📱 휴대폰(주로 안드로이드)에서 진동으로 울립니다. <b>크롬북·PC 등에는 진동 기능이 없어 지원되지 않습니다.</b></p>
+    </div>
   </div>
 
   <div class="card">
@@ -150,11 +155,16 @@ input[type=range]:disabled { opacity: 0.5; }
         <option value="taste">미각</option>
         <option value="touch">피부감각</option>
       </select>
+      <select id="filterVibrate" onchange="renderRanking()">
+        <option value="">촉각: 전체</option>
+        <option value="1">촉각 켜짐</option>
+        <option value="0">촉각 안 켜짐</option>
+      </select>
     </div>
     <div style="overflow-x:auto">
       <table class="rank-table">
-        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간</th><th>횟수</th><th>시각</th><th>음량</th><th>진동수</th><th>기타감각</th><th></th></tr></thead>
-        <tbody id="rankingBody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
+        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간</th><th>횟수</th><th>시각</th><th>음량</th><th>진동수</th><th>촉각</th><th>기타감각</th><th></th></tr></thead>
+        <tbody id="rankingBody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -189,6 +199,14 @@ const colorBefore = document.getElementById('colorBefore');
 const colorAfter = document.getElementById('colorAfter');
 const otherSenseSel = document.getElementById('otherSense');
 const colorConfigRow = document.getElementById('colorConfigRow');
+const vibrateToggle = document.getElementById('vibrateToggle');
+// navigator.vibrate 함수 자체는 PC·크롬북 브라우저에도 존재하지만 실제로는 아무 효과가 없어서,
+// 함수 존재 여부만으로는 지원 기기를 가려낼 수 없다. 기기 종류(User-Agent)로 대략 추정한다.
+const looksMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const vibrateSupported = typeof navigator.vibrate === 'function';
+document.getElementById('vibrateSupportHint').textContent = looksMobile
+  ? '✅ 모바일 기기로 보입니다 — 진동이 지원될 가능성이 높습니다.'
+  : '⚠️ PC·크롬북으로 보입니다 — 이 기기에서는 진동이 지원되지 않을 가능성이 높습니다.';
 
 volumeRange.addEventListener('input', function() {
   document.getElementById('volumeValue').textContent = volumeRange.value + '%';
@@ -280,6 +298,7 @@ otherSenseSel.addEventListener('change', function() {
   visualModeSel.disabled = offline;
   volumeRange.disabled = offline;
   freqRange.disabled = offline;
+  vibrateToggle.disabled = offline || !vibrateSupported;
   updateColorRowVisibility();
   updateIdlePreview();
   stimBox.textContent = offline ? '실험자: 자극을 줄 때 클릭/터치하거나 스페이스바 외의 키를 누르세요' : '준비를 눌러 시작하세요';
@@ -293,6 +312,7 @@ function setConfigDisabled(disabled) {
   colorBefore.disabled = disabled;
   colorAfter.disabled = disabled;
   otherSenseSel.disabled = disabled;
+  vibrateToggle.disabled = disabled || offline || !vibrateSupported;
   document.getElementById('trialCount').disabled = disabled;
 }
 
@@ -301,8 +321,8 @@ window.startSet = function() {
   if (!offline) {
     const visualMode = visualModeSel.value;
     const volume = Number(volumeRange.value);
-    if (visualMode === 'none' && volume <= 0) {
-      alert('시각·청각 자극이 모두 꺼져 있습니다. 적어도 하나는 켜주세요.');
+    if (visualMode === 'none' && volume <= 0 && !vibrateToggle.checked) {
+      alert('시각·청각·촉각 자극이 모두 꺼져 있습니다. 적어도 하나는 켜주세요.');
       return;
     }
     ensureAudioCtx();
@@ -345,6 +365,7 @@ async function fireStimulus() {
   }
   if (visualMode === 'both' || visualMode === 'text') stimBox.textContent = '지금 반응하세요!';
   playTone(freq, volume, 1000);
+  if (vibrateToggle.checked && vibrateSupported) navigator.vibrate(200);
 
   statusLine.textContent = '지금 반응하세요!';
   state = 'waiting';
@@ -441,6 +462,7 @@ async function saveAttempt(avgMs, times) {
     visualMode: visualMode, audioVolume: volume, audioFreq: volume > 0 ? freq : 0,
     colorBefore: useColor ? colorBefore.value : null, colorAfter: useColor ? colorAfter.value : null,
     otherSense: offline || null,
+    vibrate: !offline && vibrateToggle.checked,
     avgMs: avgMs, trialTimes: times, ts: Date.now(),
   };
   await fetch(base + '/attempts.json', { method: 'POST', body: JSON.stringify(payload) });
@@ -457,11 +479,14 @@ window.renderRanking = function() {
   const fv = document.getElementById('filterVisual').value;
   const ff = document.getElementById('filterFreq').value;
   const fo = document.getElementById('filterOtherSense').value;
+  const fvib = document.getElementById('filterVibrate').value;
   let list = Object.entries(allAttempts).map(function(entry) { return { id: entry[0], a: entry[1] }; });
   if (fv) list = list.filter(function(x) { return x.a.visualMode === fv; });
   if (ff) list = list.filter(function(x) { return String(x.a.audioFreq) === ff; });
   if (fo === '__none__') list = list.filter(function(x) { return !x.a.otherSense; });
   else if (fo) list = list.filter(function(x) { return x.a.otherSense === fo; });
+  if (fvib === '1') list = list.filter(function(x) { return !!x.a.vibrate; });
+  else if (fvib === '0') list = list.filter(function(x) { return !x.a.vibrate; });
   list.sort(function(x, y) { return x.a.avgMs - y.a.avgMs; });
   list = list.slice(0, 30);
 
@@ -476,10 +501,11 @@ window.renderRanking = function() {
       '<td>' + esc(VISUAL_LABELS[a.visualMode] || a.visualMode) + '</td>' +
       '<td>' + a.audioVolume + '%</td>' +
       '<td>' + (a.audioFreq ? a.audioFreq + 'Hz' : '-') + '</td>' +
+      '<td>' + (a.vibrate ? '켜짐' : '-') + '</td>' +
       '<td>' + (a.otherSense ? esc(OTHER_SENSE_LABELS[a.otherSense] || a.otherSense) : '-') + '</td>' +
       '<td>' + (canDelete ? '<button class="rank-del-btn" onclick="deleteAttempt(\'' + x.id + '\')">삭제</button>' : '') + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
+  }).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
 };
 
 window.deleteAttempt = async function(id) {
@@ -502,7 +528,7 @@ window.deleteAttempt = async function(id) {
     base = DB_URL + '/years/' + YEAR + '/exhibition/reactionTest';
     await loadRanking();
   } catch (e) {
-    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="9">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
+    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="10">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
   }
 })();
 </script>
