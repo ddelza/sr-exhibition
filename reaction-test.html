@@ -202,6 +202,16 @@ function ensureAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
+// 자극이 나오기 직전, 오디오 컨텍스트가 확실히 재생 가능한 상태인지 미리 깨워둔다.
+// 대기 시간이 몇 초씩 걸리다 보니 브라우저가 절전을 위해 오디오 컨텍스트를 자동으로
+// suspended 상태로 돌려놓는 경우가 있는데, 이 상태에서 그냥 osc.start()만 부르면
+// 실제로 소리가 나오기까지 resume()이 끝나는 시간만큼 화면 전환보다 늦게 들린다.
+async function prepareAudioForStimulus() {
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (e) {}
+  }
+}
 function playTone(freq, volumePercent, durationMs) {
   if (volumePercent <= 0) return;
   ensureAudioCtx();
@@ -314,15 +324,18 @@ function armNextTrial() {
   progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
   statusLine.textContent = '대기 중, 자극이 나올 때까지 기다리세요.';
   state = 'armed';
+  if (audioCtx) prepareAudioForStimulus(); // 대기 시작 시점에 미리 한 번 깨워둬서, 자극 낼 때 지연 없이 바로 나오게 한다
 
   const delay = 1500 + Math.random() * 2500;
   pendingTimer = setTimeout(fireStimulus, delay);
 }
 
-function fireStimulus() {
+async function fireStimulus() {
   const visualMode = visualModeSel.value;
   const volume = Number(volumeRange.value);
   const freq = FREQS[Number(freqRange.value)];
+
+  if (volume > 0) await prepareAudioForStimulus(); // 오디오가 확실히 깨어난 뒤에야 시각·청각을 같이 낸다
 
   stimulusTime = performance.now();
   if (visualMode === 'both' || visualMode === 'color') {
