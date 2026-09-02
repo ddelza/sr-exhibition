@@ -61,7 +61,7 @@ input[type=range]:disabled { opacity: 0.5; }
 <div class="wrap">
   <div class="header">
     <h1>⚡ 반응속도 테스트</h1>
-    <p>"준비"를 누르면 같은 조건으로 5회 연속 시행합니다. 자극을 확인하면 화면(박스)을 터치·클릭하거나 스페이스바를 눌러 최대한 빨리 반응하세요. 5회가 끝나면 평균 반응시간이 랭킹에 등록됩니다.</p>
+    <p>"준비"를 누르면 같은 조건으로 설정한 횟수만큼 연속 시행합니다. 자극을 확인하면 화면(박스)을 터치·클릭하거나 스페이스바를 눌러 최대한 빨리 반응하세요. 다 끝나면 평균 반응시간이 랭킹에 등록됩니다.</p>
   </div>
 
   <div class="who-banner">
@@ -113,6 +113,14 @@ input[type=range]:disabled { opacity: 0.5; }
   </div>
 
   <div class="card">
+    <div class="config-row">
+      <label class="field-label" for="trialCount">측정 횟수</label>
+      <select id="trialCount">
+        <option value="1">1회</option>
+        <option value="5" selected>5회</option>
+        <option value="10">10회</option>
+      </select>
+    </div>
     <div class="stim-box" id="stimBox">준비를 눌러 시작하세요</div>
     <div class="progress-line" id="progressLine">&nbsp;</div>
     <div class="status-line" id="statusLine">&nbsp;</div>
@@ -122,7 +130,7 @@ input[type=range]:disabled { opacity: 0.5; }
 
   <div class="card">
     <h2>🏆 랭킹</h2>
-    <p class="hint">반응 조건이 다르면 반응속도도 달라지므로, 조건을 골라서 그 조건끼리만 비교해보자. 순위는 5회 평균 기록 기준.</p>
+    <p class="hint">반응 조건이 다르면 반응속도도 달라지므로, 조건을 골라서 그 조건끼리만 비교해보자. 순위는 평균 기록 기준(측정 횟수는 표에 따로 표시).</p>
     <div class="filter-row">
       <select id="filterVisual" onchange="renderRanking()">
         <option value="">시각: 전체</option>
@@ -144,8 +152,8 @@ input[type=range]:disabled { opacity: 0.5; }
     </div>
     <div style="overflow-x:auto">
       <table class="rank-table">
-        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간(5회)</th><th>시각</th><th>음량</th><th>진동수</th><th>기타감각</th><th></th></tr></thead>
-        <tbody id="rankingBody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
+        <thead><tr><th>순위</th><th>학생</th><th>평균반응시간</th><th>횟수</th><th>시각</th><th>음량</th><th>진동수</th><th>기타감각</th><th></th></tr></thead>
+        <tbody id="rankingBody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted)">불러오는 중...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -161,7 +169,7 @@ let base = null;
 const FREQS = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
 const VISUAL_LABELS = { both: '색+글자', color: '색만', text: '글자만', none: '안바뀜' };
 const OTHER_SENSE_LABELS = { smell: '후각', taste: '미각', touch: '피부감각' };
-const TRIALS_PER_SET = 5;
+let TRIALS_PER_SET = 5; // startSet()에서 "측정 횟수" 선택값으로 매번 갱신됨
 
 function esc(str) {
   if (!str) return '';
@@ -228,6 +236,12 @@ const statusLine = document.getElementById('statusLine');
 const resultLine = document.getElementById('resultLine');
 const readyBtn = document.getElementById('readyBtn');
 const visualModeSel = document.getElementById('visualMode');
+const trialCountSel = document.getElementById('trialCount');
+
+function updateReadyBtnLabel() {
+  readyBtn.textContent = '준비 (' + trialCountSel.value + '회 연속 측정)';
+}
+trialCountSel.addEventListener('change', updateReadyBtnLabel);
 
 function isColorMode() {
   const m = visualModeSel.value;
@@ -268,6 +282,7 @@ function setConfigDisabled(disabled) {
   colorBefore.disabled = disabled;
   colorAfter.disabled = disabled;
   otherSenseSel.disabled = disabled;
+  document.getElementById('trialCount').disabled = disabled;
 }
 
 window.startSet = function() {
@@ -281,6 +296,7 @@ window.startSet = function() {
     }
     ensureAudioCtx();
   }
+  TRIALS_PER_SET = Number(document.getElementById('trialCount').value) || 5;
   setConfigDisabled(true);
   readyBtn.disabled = true;
   trialIndex = 0;
@@ -354,8 +370,10 @@ function completeTrial(rt, armNextFn) {
   } else {
     const avg = trialTimes.reduce(function(a, b) { return a + b; }, 0) / trialTimes.length;
     const roundedTimes = trialTimes.map(function(t) { return Math.round(t); });
-    statusLine.textContent = '5회 측정이 끝났습니다. "준비"를 눌러 다시 측정할 수 있습니다.';
-    resultLine.innerHTML = Math.round(avg) + ' ms<span class="avg-tag">5회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>';
+    statusLine.textContent = TRIALS_PER_SET + '회 측정이 끝났습니다. "준비"를 눌러 다시 측정할 수 있습니다.';
+    resultLine.innerHTML = TRIALS_PER_SET === 1
+      ? (Math.round(avg) + ' ms')
+      : (Math.round(avg) + ' ms<span class="avg-tag">' + TRIALS_PER_SET + '회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>');
     saveAttempt(Math.round(avg), roundedTimes);
     setConfigDisabled(false);
     readyBtn.disabled = false;
@@ -440,13 +458,14 @@ window.renderRanking = function() {
       '<td>' + (i + 1) + '</td>' +
       '<td>' + esc(a.grade) + '-' + esc(a.ban) + '-' + esc(a.num) + ' ' + esc(a.studentName) + '</td>' +
       '<td>' + a.avgMs + 'ms</td>' +
+      '<td>' + (a.trialTimes ? a.trialTimes.length : 5) + '회</td>' +
       '<td>' + esc(VISUAL_LABELS[a.visualMode] || a.visualMode) + '</td>' +
       '<td>' + a.audioVolume + '%</td>' +
       '<td>' + (a.audioFreq ? a.audioFreq + 'Hz' : '-') + '</td>' +
       '<td>' + (a.otherSense ? esc(OTHER_SENSE_LABELS[a.otherSense] || a.otherSense) : '-') + '</td>' +
       '<td>' + (canDelete ? '<button class="rank-del-btn" onclick="deleteAttempt(\'' + x.id + '\')">삭제</button>' : '') + '</td>' +
     '</tr>';
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">조건에 맞는 기록이 없습니다.</td></tr>';
 };
 
 window.deleteAttempt = async function(id) {
@@ -463,12 +482,13 @@ window.deleteAttempt = async function(id) {
     '<option value="">진동수: 전체</option>' + FREQS.map(function(f) { return '<option value="' + f + '">' + f + 'Hz</option>'; }).join('');
   updateColorRowVisibility();
   updateIdlePreview();
+  updateReadyBtnLabel();
   try {
     YEAR = await loadYear();
     base = DB_URL + '/years/' + YEAR + '/exhibition/reactionTest';
     await loadRanking();
   } catch (e) {
-    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="8">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
+    document.getElementById('rankingBody').innerHTML = '<tr><td colspan="9">불러오기 실패: ' + esc(e.message || e) + '</td></tr>';
   }
 })();
 </script>
