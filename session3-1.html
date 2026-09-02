@@ -30,6 +30,7 @@
 .block-btns button:hover { color: var(--accent); }
 .block-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; }
 .block-caption { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+.block-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; }
 .block-text { font-size: 0.88rem; line-height: 1.6; white-space: pre-wrap; }
 .block-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .block-table th, .block-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
@@ -154,22 +155,28 @@ function renderChartSVG(b) {
 }
 
 // ── 블록 보기(view) 렌더 ──────────────────────────────
+const TITLED_TYPES = ['photo', 'graph', 'resultsTable', 'freeTable'];
+function blockTitleHtml(b) {
+  return TITLED_TYPES.indexOf(b.type) !== -1 && b.title ? '<div class="block-title">' + esc(b.title) + '</div>' : '';
+}
+
 function viewBlockContent(b) {
+  const titleHtml = blockTitleHtml(b);
   if (b.type === 'photo') {
-    return (b.imageData ? '<img class="photo-preview" src="' + b.imageData + '">' : '<div class="empty-state">사진 없음</div>') +
+    return titleHtml + (b.imageData ? '<img class="photo-preview" src="' + b.imageData + '">' : '<div class="empty-state">사진 없음</div>') +
       (b.caption ? '<div class="block-caption">' + esc(b.caption) + '</div>' : '');
   }
   if (b.type === 'graph') {
-    return renderChartSVG(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
+    return titleHtml + renderChartSVG(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
   }
   if (b.type === 'resultsTable') {
     const rows = b.rows || [];
-    return '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' +
+    return titleHtml + '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' +
       (rows.map(function(r) { return '<tr><td>' + esc(r.condition) + '</td><td>' + esc(r.result) + '</td></tr>'; }).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table>';
   }
   if (b.type === 'freeTable') {
     const rowsN = b.rows || 0, colsN = b.cols || 0, cells = b.cells || {};
-    let html = '<table class="block-table">';
+    let html = titleHtml + '<table class="block-table">';
     for (let r = 0; r < rowsN; r++) {
       html += '<tr>';
       for (let c = 0; c < colsN; c++) html += '<td>' + esc(cells[r + '-' + c] || '') + '</td>';
@@ -190,6 +197,9 @@ function viewBlockContent(b) {
 function editBlockForm(id, b) {
   const type = b.type;
   let html = '<div class="block-edit">';
+  if (TITLED_TYPES.indexOf(type) !== -1) {
+    html += '<input type="text" id="blockTitle-' + id + '" placeholder="제목 (예: 반응시간 비교 그래프)" value="' + escAttr(b.title || '') + '">';
+  }
   if (type === 'photo') {
     html += '<input type="file" accept="image/*" onchange="handlePhotoFile(\'' + id + '\', this)">' +
       '<img class="photo-preview" id="photoPreview-' + id + '" src="' + (b.imageData || '') + '" style="' + (b.imageData ? '' : 'display:none') + '">' +
@@ -296,10 +306,10 @@ window.addBlockOfType = function(type) {
 };
 
 function emptyContentFor(type) {
-  if (type === 'photo') return { caption: '', imageData: '' };
-  if (type === 'graph') return { xLabel: '', yLabel: '', chartType: 'line', points: [{ x: '', y: '' }] };
-  if (type === 'resultsTable') return { rows: [{ condition: '', result: '' }] };
-  if (type === 'freeTable') return { rows: 2, cols: 2, cells: {} };
+  if (type === 'photo') return { title: '', caption: '', imageData: '' };
+  if (type === 'graph') return { title: '', xLabel: '', yLabel: '', chartType: 'line', points: [{ x: '', y: '' }] };
+  if (type === 'resultsTable') return { title: '', rows: [{ condition: '', result: '' }] };
+  if (type === 'freeTable') return { title: '', rows: 2, cols: 2, cells: {} };
   if (type === 'link') return { url: '', description: '' };
   if (type === 'text') return { content: '' };
   return {};
@@ -358,6 +368,9 @@ window.saveBlock = async function(id) {
     };
   } else if (type === 'text') {
     content = { content: document.getElementById('textContent-' + id).value.trim() };
+  }
+  if (TITLED_TYPES.indexOf(type) !== -1) {
+    content.title = document.getElementById('blockTitle-' + id).value.trim();
   }
 
   const now = Date.now();

@@ -163,20 +163,26 @@ function blockMetaText(b) {
   return b.lastEditor && b.lastEditor !== b.author ? `${author} · 최종수정: ${esc(b.lastEditorName)}` : author;
 }
 
+const TITLED_TYPES = ['photo', 'graph', 'resultsTable', 'freeTable'];
+function blockTitleHtml(b) {
+  return TITLED_TYPES.includes(b.type) && b.title ? `<div style="font-weight:700;margin-bottom:4px">${esc(b.title)}</div>` : '';
+}
+
 function blockPreviewHtml(b) {
+  const titleHtml = blockTitleHtml(b);
   if (b.type === 'photo') {
-    return (b.imageData ? `<img class="photo-preview" src="${b.imageData}">` : '<div class="detail-empty">사진 없음</div>') + (b.caption ? `<div class="detail-meta" style="margin-top:4px">${esc(b.caption)}</div>` : '');
+    return titleHtml + (b.imageData ? `<img class="photo-preview" src="${b.imageData}">` : '<div class="detail-empty">사진 없음</div>') + (b.caption ? `<div class="detail-meta" style="margin-top:4px">${esc(b.caption)}</div>` : '');
   }
   if (b.type === 'graph') {
     const pts = (b.points || []).filter(p => p.x !== '' && p.y !== '');
-    return `<div>${esc(b.xLabel)} / ${esc(b.yLabel)} (${b.chartType === 'bar' ? '막대' : '선'}그래프, 데이터 ${pts.length}개)</div>`;
+    return titleHtml + `<div>${esc(b.xLabel)} / ${esc(b.yLabel)} (${b.chartType === 'bar' ? '막대' : '선'}그래프, 데이터 ${pts.length}개)</div>`;
   }
   if (b.type === 'resultsTable') {
     const rows = b.rows || [];
-    return '<table class="block-table"><tr><th>조건</th><th>결과</th></tr>' + (rows.map(r => `<tr><td>${esc(r.condition)}</td><td>${esc(r.result)}</td></tr>`).join('') || '<tr><td colspan="2">없음</td></tr>') + '</table>';
+    return titleHtml + '<table class="block-table"><tr><th>조건</th><th>결과</th></tr>' + (rows.map(r => `<tr><td>${esc(r.condition)}</td><td>${esc(r.result)}</td></tr>`).join('') || '<tr><td colspan="2">없음</td></tr>') + '</table>';
   }
   if (b.type === 'freeTable') {
-    return `<div>${b.rows || 0}행 × ${b.cols || 0}열 표</div>`;
+    return titleHtml + `<div>${b.rows || 0}행 × ${b.cols || 0}열 표</div>`;
   }
   if (b.type === 'link') {
     return `<a href="${escAttr(b.url || '#')}" target="_blank" rel="noopener">${esc(b.description || b.url || '(링크 없음)')}</a>`;
