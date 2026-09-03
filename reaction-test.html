@@ -32,6 +32,7 @@ input[type=range]:disabled { opacity: 0.5; }
 }
 .stim-box.stim { border-color: var(--accent); }
 .stim-box.false-start { background: var(--danger-soft); color: var(--danger); }
+.stim-box.fullscreen { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 1000; border-radius: 0; margin: 0; border-width: 0; font-size: 1.8rem; }
 
 .progress-line { text-align: center; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; min-height: 1.2em; }
 .status-line { text-align: center; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px; min-height: 1.2em; }
@@ -131,6 +132,9 @@ input[type=range]:disabled { opacity: 0.5; }
     <div class="progress-line" id="progressLine">&nbsp;</div>
     <div class="status-line" id="statusLine">&nbsp;</div>
     <div class="result-line" id="resultLine">&nbsp;</div>
+    <div class="config-row" style="display:flex;align-items:center">
+      <label class="field-label" for="fullscreenToggle" style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="fullscreenToggle" style="width:auto;vertical-align:middle"> 전체화면 모드</label>
+    </div>
     <button class="ready-btn" id="readyBtn" onclick="startSet()">준비 (5회 연속 측정)</button>
   </div>
 
@@ -200,6 +204,7 @@ const colorAfter = document.getElementById('colorAfter');
 const otherSenseSel = document.getElementById('otherSense');
 const colorConfigRow = document.getElementById('colorConfigRow');
 const vibrateToggle = document.getElementById('vibrateToggle');
+const fullscreenToggle = document.getElementById('fullscreenToggle');
 // navigator.vibrate 함수 자체는 PC·크롬북 브라우저에도 존재하지만 실제로는 아무 효과가 없어서,
 // 함수 존재 여부만으로는 지원 기기를 가려낼 수 없다. 기기 종류(User-Agent)로 대략 추정한다.
 const looksMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -258,6 +263,21 @@ let stimulusTime = 0;
 let pendingTimer = null;
 let trialIndex = 0; // 이번 세트에서 지금까지 유효하게 마친 시행 수
 let trialTimes = [];
+let fullscreenActive = false;
+
+function resetStimBoxClass(extra) {
+  stimBox.className = 'stim-box' + (fullscreenActive ? ' fullscreen' : '') + (extra ? ' ' + extra : '');
+}
+function enterStimFullscreen() {
+  fullscreenActive = true;
+  stimBox.classList.add('fullscreen');
+  document.body.style.overflow = 'hidden';
+}
+function exitStimFullscreen() {
+  fullscreenActive = false;
+  stimBox.classList.remove('fullscreen');
+  document.body.style.overflow = '';
+}
 
 const stimBox = document.getElementById('stimBox');
 const progressLine = document.getElementById('progressLine');
@@ -314,6 +334,7 @@ function setConfigDisabled(disabled) {
   otherSenseSel.disabled = disabled;
   vibrateToggle.disabled = disabled || offline || !vibrateSupported;
   document.getElementById('trialCount').disabled = disabled;
+  fullscreenToggle.disabled = disabled;
 }
 
 window.startSet = function() {
@@ -328,6 +349,7 @@ window.startSet = function() {
     ensureAudioCtx();
   }
   TRIALS_PER_SET = Number(document.getElementById('trialCount').value) || 5;
+  if (fullscreenToggle.checked) enterStimFullscreen(); else exitStimFullscreen();
   setConfigDisabled(true);
   readyBtn.disabled = true;
   trialIndex = 0;
@@ -337,8 +359,9 @@ window.startSet = function() {
 };
 
 function armNextTrial() {
-  stimBox.className = 'stim-box';
-  stimBox.textContent = '대기하세요';
+  resetStimBoxClass();
+  const showWaitText = (visualModeSel.value === 'both' || visualModeSel.value === 'text');
+  stimBox.textContent = showWaitText ? '대기하세요' : '';
   state = 'idle'; // updateIdlePreview가 idle일 때만 미리보기 색을 적용하므로 잠깐 idle로 둔다
   updateIdlePreview();
   progressLine.textContent = trialIndex + '/' + TRIALS_PER_SET + '회 완료';
@@ -372,7 +395,7 @@ async function fireStimulus() {
 }
 
 function armNextTrialOffline() {
-  stimBox.className = 'stim-box';
+  resetStimBoxClass();
   stimBox.style.background = '';
   stimBox.style.color = '';
   stimBox.textContent = '실험자: 자극을 줄 때 클릭/터치하거나 스페이스바 외의 키를 누르세요';
@@ -392,7 +415,7 @@ function triggerOffline() {
 function completeTrial(rt, armNextFn) {
   trialTimes.push(rt);
   trialIndex++;
-  stimBox.className = 'stim-box';
+  resetStimBoxClass();
   stimBox.style.background = '';
   stimBox.style.color = '';
   stimBox.textContent = '기록됨';
@@ -410,6 +433,7 @@ function completeTrial(rt, armNextFn) {
       ? (Math.round(avg) + ' ms')
       : (Math.round(avg) + ' ms<span class="avg-tag">' + TRIALS_PER_SET + '회 평균 (개별: ' + roundedTimes.join(', ') + 'ms)</span>');
     saveAttempt(Math.round(avg), roundedTimes);
+    exitStimFullscreen();
     setConfigDisabled(false);
     readyBtn.disabled = false;
     state = 'idle';
@@ -418,7 +442,7 @@ function completeTrial(rt, armNextFn) {
 }
 
 function handleFalseStart(armNextFn) {
-  stimBox.className = 'stim-box false-start';
+  resetStimBoxClass('false-start');
   stimBox.textContent = '너무 빨랐습니다!';
   statusLine.textContent = '자극이 나오기 전에 반응했습니다. 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
   state = 'betweenTrials';
