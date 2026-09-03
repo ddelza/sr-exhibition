@@ -75,11 +75,14 @@ const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 const TARGET_GRADE = 3;
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, blocksAll = {}, feedbackAll = {}, titleAll = {}, roster = {};
+let finalGroups = {}, posts = {}, preferences = {}, blocksAll = {}, feedbackAll = {}, titleAll = {}, summaryAll = {}, roster = {};
 let selectedBan = '';
 let expanded = {};
 
 const BLOCK_LABELS = { photo: '📷 사진', graph: '📈 그래프', resultsTable: '🧪 실험 결과표', freeTable: '▦ 자유 표', link: '🔗 링크', text: '📝 텍스트' };
+const SUMMARY_FIELD_LABELS = [
+  ['prediction', '가설 예측'], ['actualResult', '실험 결과'], ['conclusion', '결론 정리'], ['principle', '원리 탐구'],
+];
 
 function esc(str) {
   if (!str) return '';
@@ -112,13 +115,14 @@ async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
   const s3 = `${DB_URL}/years/${YEAR}/exhibition/s3`;
-  const [fg, p, pref, bl, fb, tt] = await Promise.all([
+  const [fg, p, pref, bl, fb, tt, sm] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
     fetch(`${s3}/blocks.json`).then(r => r.json()),
     fetch(`${s3}/feedback.json`).then(r => r.json()),
     fetch(`${s2}/title.json`).then(r => r.json()),
+    fetch(`${s3}/summary.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
@@ -126,6 +130,7 @@ async function loadAll() {
   blocksAll = bl || {};
   feedbackAll = fb || {};
   titleAll = tt || {};
+  summaryAll = sm || {};
 }
 
 function bansAvailable() {
@@ -174,8 +179,10 @@ function blockPreviewHtml(b) {
     return titleHtml + (b.imageData ? `<img class="photo-preview" src="${b.imageData}">` : '<div class="detail-empty">사진 없음</div>') + (b.caption ? `<div class="detail-meta" style="margin-top:4px">${esc(b.caption)}</div>` : '');
   }
   if (b.type === 'graph') {
-    const pts = (b.points || []).filter(p => p.x !== '' && p.y !== '');
-    return titleHtml + `<div>${esc(b.xLabel)} / ${esc(b.yLabel)} (${b.chartType === 'bar' ? '막대' : '선'}그래프, 데이터 ${pts.length}개)</div>`;
+    const series = (b.series && b.series.length) ? b.series : (b.points ? [{ name: '', points: b.points }] : []);
+    const totalPts = series.reduce((sum, s) => sum + (s.points || []).filter(p => p.x !== '' && p.y !== '').length, 0);
+    const seriesLabel = series.length > 1 ? `계열 ${series.length}개 · ` : '';
+    return titleHtml + `<div>${esc(b.xLabel)} / ${esc(b.yLabel)} (${seriesLabel}${b.chartType === 'bar' ? '막대' : '선'}그래프, 데이터 ${totalPts}개)</div>`;
   }
   if (b.type === 'resultsTable') {
     const rows = b.rows || [];
@@ -204,6 +211,21 @@ function detailBlockList(topicId) {
   </div>`).join('');
 }
 
+function itemMetaText(it) {
+  const author = `작성자: ${esc(it.authorName)}`;
+  return it.lastEditor && it.lastEditor !== it.author ? `${author} · 최종수정자: ${esc(it.lastEditorName)}` : author;
+}
+
+function detailSummaryList(topicId) {
+  const groupSummary = summaryAll[topicId] || {};
+  return SUMMARY_FIELD_LABELS.map(([key, label]) => {
+    const list = Object.values(groupSummary[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const rows = list.map(it => `<div class="detail-meta" style="font-size:0.82rem;color:var(--text);margin-top:4px">${esc(it.text)}<div class="detail-meta">${itemMetaText(it)}</div></div>`).join('')
+      || '<div class="detail-empty">아직 없음</div>';
+    return `<div class="detail-block"><div class="detail-block-label">${label}</div>${rows}</div>`;
+  }).join('');
+}
+
 window.toggleExpand = function(topicId) {
   expanded[topicId] = !expanded[topicId];
   render();
@@ -229,6 +251,7 @@ function render() {
     const t = titleAll[topicId];
     const counts = {};
     Object.values(groupBlocks).forEach(b => { counts[b.type] = (counts[b.type] || 0) + 1; });
+    const groupSummary = summaryAll[topicId] || {};
 
     return `<div class="group-card">
       <h2>${t && t.text ? esc(t.text) : '(제목 미정)'}</h2>
@@ -240,8 +263,19 @@ function render() {
           return `<span class="status-chip ${n ? 'done' : 'todo'}">${BLOCK_LABELS[type]} ${n}개</span>`;
         }).join('')}
       </div>
+      <div class="status-row">
+        ${SUMMARY_FIELD_LABELS.map(([key, label]) => {
+          const n = Object.keys(groupSummary[key] || {}).length;
+          return `<span class="status-chip ${n ? 'done' : 'todo'}">${label} ${n}개</span>`;
+        }).join('')}
+      </div>
       <button class="expand-btn" onclick="toggleExpand('${topicId}')">${expanded[topicId] ? '▴ 접기' : '▾ 작성 내용 펼치기'}</button>
-      ${expanded[topicId] ? `<div class="detail-wrap">${detailBlockList(topicId)}</div>` : ''}
+      ${expanded[topicId] ? `<div class="detail-wrap">
+        <div class="detail-block-label" style="margin-bottom:6px">① 실험 보고서</div>
+        ${detailBlockList(topicId)}
+        <div class="detail-block-label" style="margin:10px 0 6px">② 탐구 결과 정리</div>
+        ${detailSummaryList(topicId)}
+      </div>` : ''}
       <div class="feedback-row">
         <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>
         <button onclick="saveFeedback('${topicId}')">저장</button>

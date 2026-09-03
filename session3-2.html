@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3차시 · 탐구 결과 정리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.feedback-banner { background: var(--accent); color: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.88rem; line-height: 1.5; }
+.feedback-banner b { display: block; font-size: 0.76rem; opacity: 0.85; margin-bottom: 4px; }
+
+.prev-toggle { width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text-muted); font-size: 0.84rem; font-weight: 600; cursor: pointer; margin-bottom: 14px; }
+.summary-field { margin-bottom: 10px; }
+.summary-field .label { font-size: 0.76rem; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
+.summary-field .items { font-size: 0.83rem; line-height: 1.6; }
+.prev-subhead { font-size: 0.82rem; font-weight: 700; color: var(--text-muted); margin: 14px 0 6px; }
+.prev-block { background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.block-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 6px; }
+.block-caption { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+.block-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.block-table th, .block-table td { border: 1px solid var(--border); padding: 5px 7px; text-align: left; }
+.block-table th { background: var(--surface); font-size: 0.74rem; }
+.photo-preview { max-width: 100%; border-radius: 8px; display: block; }
+
+.field-hint { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; margin: -2px 0 10px; }
+.step-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.step-row:last-of-type { border-bottom: none; }
+.step-row .step-text { flex: 1; white-space: pre-wrap; }
+.step-row .item-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+.step-row .step-btns { display: flex; gap: 8px; }
+.step-row button { background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 0; white-space: nowrap; }
+.step-row button:hover { color: var(--accent); text-decoration: underline; }
+.step-edit-row { display: flex; gap: 6px; flex: 1; align-items: center; }
+.step-edit-row textarea { flex: 1; padding: 5px 8px; font-size: 0.85rem; min-height: 44px; resize: vertical; font-family: inherit; }
+.step-edit-row button.save-btn { background: var(--accent); color: #fff; padding: 5px 10px; border-radius: 6px; align-self: flex-start; }
+.step-add-row { display: flex; gap: 6px; margin-top: 10px; }
+.step-add-row textarea { flex: 1; padding: 9px 10px; font-size: 0.88rem; min-height: 44px; resize: vertical; font-family: inherit; }
+.step-add-row button {
+  padding: 9px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap; align-self: flex-start;
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📊 3차시 · 탐구 결과 정리하기</h1>
+    <p>실험 결과를 바탕으로 가설을 되짚어보고 결론과 원리를 정리해보자. 모둠원 누구나 자유롭게 추가·수정할 수 있다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let s1base = null, s2base = null, s3base = null, summaryBase = null;
+let topicId = null;
+let post = {};
+let groupmates = [];
+let s2Title = null;
+let s2Items = {};
+let blocks = {};
+let feedback = null;
+let summaryItems = {}; // { [fieldKey]: { [itemId]: {text, author, authorName, lastEditor, lastEditorName, createdAt, updatedAt} } }
+let editingItemKey = null; // `${fieldKey}:${itemId}`
+let prevOpen = false;
+
+const S2_FIELD_DEFS = [
+  ['materials', '준비물'], ['measurement', '변인 측정 방법'], ['controlledVars', '통제변인'],
+  ['steps', '실험 과정'], ['precautions', '안전·유의사항'], ['memo', '자유 메모'],
+];
+const BLOCK_LABELS = { photo: '📷 사진', graph: '📈 그래프', resultsTable: '🧪 실험 결과표', freeTable: '▦ 자유 표', link: '🔗 링크', text: '📝 텍스트' };
+const TITLED_TYPES = ['photo', 'graph', 'resultsTable', 'freeTable'];
+
+const FIELD_DEFS = [
+  { key: 'prediction', label: '① 가설에서 예측한 것', hint: null, placeholder: '가설에서 예측한 내용을 입력 후 추가' },
+  { key: 'actualResult', label: '② 실제 실험 결과', hint: null, placeholder: '실제로 나온 실험 결과를 입력 후 추가' },
+  { key: 'conclusion', label: '③ 결론 정리', hint: '가설에서는 이렇게 예측했는데, 실제로는 이런 결과가 나와서 우리의 가설이 (맞다 / 틀렸다 / 이렇게 수정되어야 할 필요가 있다)는 것을 알게 되었다.', placeholder: '결론을 정리해서 입력 후 추가' },
+  { key: 'principle', label: '④ 원리 탐구하기', hint: '왜 이런 결과가 나왔을까? 교과서, 인터넷 조사, AI 등을 활용해 원리를 탐구해보고 적어보자.', placeholder: '조사한 원리를 입력 후 추가' },
+];
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+// 포커스 중인 입력창은 폴링으로 다시 그려도 값이 안 날아가게, 렌더 전후로 포커스/값/커서를 보존한다.
+function withFocusPreserved(renderFn) {
+  const active = document.activeElement;
+  const id = active && active.id;
+  const isTextInput = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+  const value = isTextInput ? active.value : null;
+  const selStart = isTextInput ? active.selectionStart : null;
+  const selEnd = isTextInput ? active.selectionEnd : null;
+  renderFn();
+  if (id) {
+    const el = document.getElementById(id);
+    if (el && isTextInput) {
+      el.value = value;
+      if (typeof selStart === 'number') { try { el.setSelectionRange(selStart, selEnd); } catch (e) {} }
+      el.focus();
+    }
+  }
+}
+
+async function loadAll() {
+  const [si, fb] = await Promise.all([
+    fetch(`${summaryBase}/${topicId}.json`).then(r => r.json()),
+    fetch(`${s3base}/feedback/${topicId}.json`).then(r => r.json()),
+  ]);
+  summaryItems = si || {};
+  feedback = fb || null;
+  withFocusPreserved(render);
+}
+
+// ── 이전 내용 미리보기 (읽기 전용) ──────────────────────────────
+function chartColor(i) {
+  const colors = ['var(--accent)', '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
+  return colors[i % colors.length];
+}
+function chartDash(i) {
+  const dashes = ['', '6,4', '2,3', '10,3,2,3', '1,4'];
+  return dashes[i % dashes.length];
+}
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const ticks = [];
+  for (let i = 0; i <= count; i++) ticks.push(Math.round((min + (max - min) * i / count) * 100) / 100);
+  return ticks;
+}
+function seriesOf(b) {
+  if (b.series && b.series.length) return b.series;
+  if (b.points && b.points.length) return [{ name: '', points: b.points }];
+  return [];
+}
+
+function renderChartSVG(b) {
+  const series = seriesOf(b).map(s => ({
+    name: s.name || '',
+    points: (s.points || []).map(p => ({ x: String(p.x), y: Number(p.y) })).filter(p => p.x !== '' && !isNaN(p.y)),
+  })).filter(s => s.points.length);
+  if (!series.length) return '<div class="empty-state">데이터 없음</div>';
+
+  const cats = [];
+  series.forEach(s => s.points.forEach(p => { if (cats.indexOf(p.x) === -1) cats.push(p.x); }));
+  const allNumeric = cats.every(c => !isNaN(Number(c)));
+  if (allNumeric) cats.sort((a, b2) => Number(a) - Number(b2));
+
+  const W = 320, H = 220, PAD_L = 40, PAD_B = 38, PAD_T = 14, PAD_R = 14;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  const allY = series.flatMap(s => s.points.map(p => p.y));
+  let yMin = Math.min(0, Math.min(...allY)), yMax = Math.max(0, Math.max(...allY));
+  if (yMin === yMax) yMax += 1;
+  const sy = y => PAD_T + plotH - (y - yMin) / (yMax - yMin) * plotH;
+  const catX = i => cats.length === 1 ? PAD_L + plotW / 2 : PAD_L + i / (cats.length - 1) * plotW;
+
+  let axisHtml = niceTicks(yMin, yMax, 4).map(t => {
+    const y = sy(t);
+    return `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#e5e5e5"/><text x="${PAD_L - 6}" y="${y + 3}" font-size="9" fill="#888" text-anchor="end">${t}</text>`;
+  }).join('');
+  axisHtml += cats.map((c, i) => `<text x="${catX(i)}" y="${H - PAD_B + 14}" font-size="9" fill="#888" text-anchor="middle">${esc(c)}</text>`).join('');
+  axisHtml += `<line x1="${PAD_L}" y1="${H - PAD_B}" x2="${W - PAD_R}" y2="${H - PAD_B}" stroke="#999"/><line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${H - PAD_B}" stroke="#999"/>`;
+
+  let dataHtml = '';
+  if (b.chartType === 'bar') {
+    const groupW = plotW / cats.length * 0.7;
+    const barW = groupW / series.length;
+    series.forEach((s, si) => {
+      cats.forEach((c, ci) => {
+        const p = s.points.find(pt => pt.x === c);
+        if (!p) return;
+        const gx0 = catX(ci) - groupW / 2 + si * barW;
+        const y0 = sy(0), y1 = sy(p.y);
+        dataHtml += `<rect x="${gx0}" y="${Math.min(y0, y1)}" width="${barW - 1}" height="${Math.abs(y1 - y0)}" fill="${chartColor(si)}"/>`;
+      });
+    });
+  } else {
+    series.forEach((s, si) => {
+      const pts = cats.map((c, ci) => { const p = s.points.find(pt => pt.x === c); return p ? { cx: catX(ci), cy: sy(p.y) } : null; }).filter(Boolean);
+      const dash = chartDash(si);
+      dataHtml += `<polyline points="${pts.map(p => p.cx + ',' + p.cy).join(' ')}" fill="none" stroke="${chartColor(si)}" stroke-width="2"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+      dataHtml += pts.map(p => `<circle cx="${p.cx}" cy="${p.cy}" r="3" fill="${chartColor(si)}"/>`).join('');
+    });
+  }
+
+  let legendHtml = '';
+  if (series.length > 1) {
+    legendHtml = series.map((s, si) => {
+      const ly = PAD_T + 4 + si * 13;
+      const dash = chartDash(si);
+      return `<line x1="${PAD_L + 6}" y1="${ly}" x2="${PAD_L + 22}" y2="${ly}" stroke="${chartColor(si)}" stroke-width="2"${dash ? ` stroke-dasharray="${dash}"` : ''}/><text x="${PAD_L + 26}" y="${ly + 3}" font-size="9" fill="var(--text)">${esc(s.name || ('y' + (si + 1)))}</text>`;
+    }).join('');
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;background:var(--surface);border-radius:8px">${axisHtml}${dataHtml}${legendHtml}</svg>`;
+}
+
+function blockTitleHtml(b) {
+  return TITLED_TYPES.indexOf(b.type) !== -1 && b.title ? `<div class="block-title">${esc(b.title)}</div>` : '';
+}
+
+function blockPreviewHtml(b) {
+  const titleHtml = blockTitleHtml(b);
+  if (b.type === 'photo') {
+    return titleHtml + (b.imageData ? `<img class="photo-preview" src="${b.imageData}">` : '<div class="empty-state">사진 없음</div>') + (b.caption ? `<div class="block-caption">${esc(b.caption)}</div>` : '');
+  }
+  if (b.type === 'graph') {
+    return titleHtml + renderChartSVG(b) + `<div class="block-caption">${esc(b.xLabel || 'x')} / ${esc(b.yLabel || 'y')}${b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프'}</div>`;
+  }
+  if (b.type === 'resultsTable') {
+    const rows = b.rows || [];
+    return titleHtml + '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' + (rows.map(r => `<tr><td>${esc(r.condition)}</td><td>${esc(r.result)}</td></tr>`).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table>';
+  }
+  if (b.type === 'freeTable') {
+    const rowsN = b.rows || 0, colsN = b.cols || 0, cells = b.cells || {};
+    let html = titleHtml + '<table class="block-table">';
+    for (let r = 0; r < rowsN; r++) {
+      html += '<tr>';
+      for (let c = 0; c < colsN; c++) html += `<td>${esc(cells[r + '-' + c] || '')}</td>`;
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+  if (b.type === 'link') {
+    return `<a href="${escAttr(b.url || '#')}" target="_blank" rel="noopener">${esc(b.description || b.url || '(링크 없음)')}</a>`;
+  }
+  if (b.type === 'text') {
+    return `<div style="white-space:pre-wrap">${esc(b.content || '')}</div>`;
+  }
+  return '';
+}
+
+function prevSummaryHtml() {
+  let html = '<div class="prev-subhead">2차시 · 탐구 계획</div>';
+  let any = false;
+  S2_FIELD_DEFS.forEach(def => {
+    const list = Object.values(s2Items[def[0]] || {});
+    if (!list.length) return;
+    any = true;
+    html += `<div class="summary-field"><div class="label">${def[1]}</div><div class="items">${list.map(it => esc(it.text)).join('<br>')}</div></div>`;
+  });
+  if (!any) html += '<div class="empty-state">2차시 내용이 아직 없습니다.</div>';
+
+  html += '<div class="prev-subhead">① 실험 보고서</div>';
+  const sortedIds = Object.keys(blocks).sort((a, b) => (blocks[a].order || 0) - (blocks[b].order || 0));
+  if (!sortedIds.length) {
+    html += '<div class="empty-state">아직 작성된 보고서 블록이 없습니다.</div>';
+  } else {
+    html += sortedIds.map(id => {
+      const b = blocks[id];
+      return `<div class="prev-block"><div style="font-size:0.74rem;font-weight:700;color:var(--accent);margin-bottom:4px">${BLOCK_LABELS[b.type] || b.type}</div>${blockPreviewHtml(b)}</div>`;
+    }).join('');
+  }
+  return html;
+}
+window.togglePrev = function() { prevOpen = !prevOpen; render(); };
+
+// ── 결과 정리 항목 CRUD ──────────────────────────────
+function itemMetaText(it) {
+  const author = `작성자: ${esc(it.authorName)}`;
+  return it.lastEditor && it.lastEditor !== it.author ? `${author} · 최종수정자: ${esc(it.lastEditorName)}` : author;
+}
+
+function itemRow(fieldKey, itemId, it) {
+  const editKey = fieldKey + ':' + itemId;
+  if (editingItemKey === editKey) {
+    return `<div class="step-row">
+      <span class="step-edit-row">
+        <textarea id="editItem-${fieldKey}-${itemId}">${esc(it.text)}</textarea>
+        <button class="save-btn" onclick="saveEditItem('${fieldKey}', '${itemId}')">저장</button>
+        <button onclick="cancelEditItem()">취소</button>
+      </span>
+    </div>`;
+  }
+  return `<div class="step-row">
+    <span class="step-text">${esc(it.text)}<div class="item-meta">${itemMetaText(it)}</div></span>
+    <span class="step-btns">
+      <button onclick="startEditItem('${fieldKey}', '${itemId}')">수정</button>
+      <button onclick="deleteItem('${fieldKey}', '${itemId}')">삭제</button>
+    </span>
+  </div>`;
+}
+
+function itemsBlock(def) {
+  const list = Object.entries(summaryItems[def.key] || {}).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+  const rows = list.map(([itemId, it]) => itemRow(def.key, itemId, it)).join('') || '<div class="empty-state">아직 작성된 내용이 없습니다.</div>';
+  return `<div class="group-card">
+    <h2>${def.label}</h2>
+    ${def.hint ? `<div class="field-hint">${esc(def.hint)}</div>` : ''}
+    ${rows}
+    <div class="step-add-row">
+      <textarea id="newItem-${def.key}" placeholder="${escAttr(def.placeholder)}"></textarea>
+      <button onclick="addItem('${def.key}')">추가</button>
+    </div>
+  </div>`;
+}
+
+window.addItem = async function(fieldKey) {
+  const input = document.getElementById('newItem-' + fieldKey);
+  const text = input.value.trim();
+  if (!text) return;
+  const now = Date.now();
+  await fetch(`${summaryBase}/${topicId}/${fieldKey}.json`, {
+    method: 'POST',
+    body: JSON.stringify({
+      text, author: student.id, authorName: student.name,
+      lastEditor: student.id, lastEditorName: student.name,
+      createdAt: now, updatedAt: now,
+    }),
+  });
+  await loadAll();
+};
+
+window.startEditItem = function(fieldKey, itemId) {
+  editingItemKey = fieldKey + ':' + itemId;
+  render();
+  const input = document.getElementById(`editItem-${fieldKey}-${itemId}`);
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+};
+
+window.cancelEditItem = function() {
+  editingItemKey = null;
+  render();
+};
+
+window.saveEditItem = async function(fieldKey, itemId) {
+  const input = document.getElementById(`editItem-${fieldKey}-${itemId}`);
+  const text = input.value.trim();
+  if (!text) return;
+  const original = summaryItems[fieldKey][itemId];
+  editingItemKey = null;
+  await fetch(`${summaryBase}/${topicId}/${fieldKey}/${itemId}.json`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      text, author: original.author, authorName: original.authorName,
+      lastEditor: student.id, lastEditorName: student.name,
+      createdAt: original.createdAt, updatedAt: Date.now(),
+    }),
+  });
+  await loadAll();
+};
+
+window.deleteItem = async function(fieldKey, itemId) {
+  if (!confirm('삭제할까요?')) return;
+  await fetch(`${summaryBase}/${topicId}/${fieldKey}/${itemId}.json`, { method: 'DELETE' });
+  await loadAll();
+};
+
+function render() {
+  const html = `
+    ${feedback && feedback.text ? `<div class="feedback-banner"><b>선생님 피드백</b>${esc(feedback.text)}</div>` : ''}
+
+    <div class="group-card">
+      <h2>${s2Title && s2Title.text ? esc(s2Title.text) : '(실험 제목 미정)'}</h2>
+      <div class="post-hypo"><b>질문</b> ${esc(post.question)}<br><b>독립변인</b> ${esc(post.iv)} · <b>종속변인</b> ${esc(post.dv)}<br>${esc(post.hypothesis)}</div>
+      <button class="prev-toggle" onclick="togglePrev()">${prevOpen ? '▴ 이전 내용 접기' : '▾ 이전 내용 펼치기 (2차시 계획 · ① 실험 보고서)'}</button>
+      ${prevOpen ? prevSummaryHtml() : ''}
+      <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+    </div>
+
+    ${FIELD_DEFS.map(itemsBlock).join('')}
+  `;
+  document.getElementById('content').innerHTML = html;
+
+  FIELD_DEFS.forEach(def => {
+    const input = document.getElementById('newItem-' + def.key);
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addItem(def.key); } });
+  });
+  if (editingItemKey) {
+    const [fieldKey, itemId] = editingItemKey.split(':');
+    const editInput = document.getElementById(`editItem-${fieldKey}-${itemId}`);
+    if (editInput) editInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditItem(fieldKey, itemId); }
+      if (e.key === 'Escape') { e.preventDefault(); cancelEditItem(); }
+    });
+  }
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    s2base = `${DB_URL}/years/${YEAR}/exhibition/s2`;
+    s3base = `${DB_URL}/years/${YEAR}/exhibition/s3`;
+    summaryBase = `${s3base}/summary`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const [postRes, finalAllRes, prefAllRes, titleRes, itemsRes, blocksRes] = await Promise.all([
+      fetch(`${s1base}/posts/${topicId}.json`).then(r => r.json()),
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+      fetch(`${s2base}/title/${topicId}.json`).then(r => r.json()),
+      fetch(`${s2base}/items/${topicId}.json`).then(r => r.json()),
+      fetch(`${s3base}/blocks/${topicId}.json`).then(r => r.json()),
+    ]);
+    post = postRes || {};
+    s2Title = titleRes || null;
+    s2Items = itemsRes || {};
+    blocks = blocksRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
