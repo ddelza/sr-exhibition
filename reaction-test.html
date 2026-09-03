@@ -412,7 +412,13 @@ function triggerOffline() {
   state = 'waiting-offline';
 }
 
+const TOO_FAST_MS = 100; // 예측 클릭으로 의심되는 반응시간 기준 — 학생 화면에는 구체적 수치를 노출하지 않는다
+
 function completeTrial(rt, armNextFn) {
+  if (rt <= TOO_FAST_MS) {
+    handleFalseStart(armNextFn, '예측해서 누르면 반응속도를 제대로 측정할 수 없습니다.');
+    return;
+  }
   trialTimes.push(rt);
   trialIndex++;
   resetStimBoxClass();
@@ -441,10 +447,10 @@ function completeTrial(rt, armNextFn) {
   }
 }
 
-function handleFalseStart(armNextFn) {
+function handleFalseStart(armNextFn, message) {
   resetStimBoxClass('false-start');
   stimBox.textContent = '너무 빨랐습니다!';
-  statusLine.textContent = '자극이 나오기 전에 반응했습니다. 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
+  statusLine.textContent = (message || '자극이 나오기 전에 반응했습니다.') + ' 이번 시행은 세지 않고, 잠시 후 다시 시도합니다.';
   state = 'betweenTrials';
   setTimeout(armNextFn, 1200);
 }
