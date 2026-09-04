@@ -31,6 +31,9 @@
 .block-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; }
 .block-caption { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
 .block-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 0.78rem; color: var(--text); }
+.chart-legend .legend-item { display: flex; align-items: center; gap: 5px; }
+.chart-legend .legend-swatch { width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
 .block-text { font-size: 0.88rem; line-height: 1.6; white-space: pre-wrap; }
 .block-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .block-table th, .block-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
@@ -165,11 +168,15 @@ function renderChartSVG(b) {
   const allNumeric = cats.every(function(c) { return !isNaN(Number(c)); });
   if (allNumeric) cats.sort(function(a, b2) { return Number(a) - Number(b2); });
 
-  const W = 320, H = 220, PAD_L = 40, PAD_B = 38, PAD_T = 14, PAD_R = 14;
+  const W = 320, H = 220, PAD_L = 40, PAD_B = 38, PAD_T = 20, PAD_R = 14;
   const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
   const allY = [].concat.apply([], series.map(function(s) { return s.points.map(function(p) { return p.y; }); }));
   let yMin = Math.min(0, Math.min.apply(null, allY)), yMax = Math.max(0, Math.max.apply(null, allY));
   if (yMin === yMax) yMax += 1;
+  // 데이터 최댓값이 그래프 맨 위 끝에 딱 붙어 잘려 보이지 않도록 위(그리고 음수가 있으면 아래)에 여백을 둔다
+  const headroom = (yMax - yMin) * 0.12;
+  yMax += headroom;
+  if (yMin < 0) yMin -= headroom;
   const sy = function(y) { return PAD_T + plotH - (y - yMin) / (yMax - yMin) * plotH; };
   const catX = function(i) { return cats.length === 1 ? PAD_L + plotW / 2 : PAD_L + i / (cats.length - 1) * plotW; };
 
@@ -209,17 +216,21 @@ function renderChartSVG(b) {
     });
   }
 
-  let legendHtml = '';
-  if (series.length > 1) {
-    legendHtml = series.map(function(s, si) {
-      const ly = PAD_T + 4 + si * 13;
-      const dash = chartDash(si);
-      return '<line x1="' + (PAD_L + 6) + '" y1="' + ly + '" x2="' + (PAD_L + 22) + '" y2="' + ly + '" stroke="' + chartColor(si) + '" stroke-width="2"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>' +
-        '<text x="' + (PAD_L + 26) + '" y="' + (ly + 3) + '" font-size="9" fill="var(--text)">' + esc(s.name || ('y' + (si + 1))) + '</text>';
-    }).join('');
-  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:var(--bg);border-radius:8px">' + axisHtml + dataHtml + '</svg>';
+}
 
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:var(--bg);border-radius:8px">' + axisHtml + dataHtml + legendHtml + '</svg>';
+// 범례는 SVG 안에 겹쳐 그리면 계열·구간 수에 따라 막대·선과 충돌하므로, SVG 밖 별도 HTML 줄로 둔다
+function chartLegendHtml(b) {
+  const series = seriesOf(b).filter(function(s) { return (s.points || []).length; });
+  if (series.length <= 1) return '';
+  const styleFor = function(dash) {
+    if (dash === '6,4' || dash === '10,3,2,3') return 'dashed';
+    if (dash === '2,3' || dash === '1,4') return 'dotted';
+    return 'solid';
+  };
+  return '<div class="chart-legend">' + series.map(function(s, si) {
+    return '<span class="legend-item"><span class="legend-swatch" style="border-top-color:' + chartColor(si) + ';border-top-style:' + styleFor(chartDash(si)) + '"></span>' + esc(s.name || ('계열 ' + (si + 1))) + '</span>';
+  }).join('') + '</div>';
 }
 
 // ── 블록 보기(view) 렌더 ──────────────────────────────
@@ -235,7 +246,7 @@ function viewBlockContent(b) {
       (b.caption ? '<div class="block-caption">' + esc(b.caption) + '</div>' : '');
   }
   if (b.type === 'graph') {
-    return titleHtml + renderChartSVG(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
+    return titleHtml + renderChartSVG(b) + chartLegendHtml(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
   }
   if (b.type === 'resultsTable') {
     const rows = b.rows || [];
