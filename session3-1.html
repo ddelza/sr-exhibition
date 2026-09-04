@@ -178,7 +178,12 @@ function renderChartSVG(b) {
   yMax += headroom;
   if (yMin < 0) yMin -= headroom;
   const sy = function(y) { return PAD_T + plotH - (y - yMin) / (yMax - yMin) * plotH; };
-  const catX = function(i) { return cats.length === 1 ? PAD_L + plotW / 2 : PAD_L + i / (cats.length - 1) * plotW; };
+  // 각 항목을 동일한 폭의 "칸" 가운데에 배치한다 — 막대 그래프에서 맨 앞·맨 뒤 항목의
+  // 막대 묶음이 칸 너비의 절반만큼 좌우로 퍼지는데, 이전에는 항목을 플롯 영역 양 끝에
+  // 딱 붙여놓아서 그 퍼짐이 SVG 바깥으로 넘어가 잘려 보였다. 슬롯 방식은 항상 안쪽에
+  // 들어오도록 보장한다.
+  const slotW = plotW / cats.length;
+  const catX = function(i) { return PAD_L + slotW * (i + 0.5); };
 
   let axisHtml = niceTicks(yMin, yMax, 4).map(function(t) {
     const y = sy(t);
@@ -193,7 +198,7 @@ function renderChartSVG(b) {
 
   let dataHtml = '';
   if (b.chartType === 'bar') {
-    const groupW = plotW / cats.length * 0.7;
+    const groupW = slotW * 0.7;
     const barW = groupW / series.length;
     series.forEach(function(s, si) {
       cats.forEach(function(c, ci) {
