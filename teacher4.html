@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>2차시 관리 — 자극과 반응 전람회</title>
+<title>4차시 관리 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
 <style>
 .wrap { max-width: 680px; }
@@ -15,6 +15,9 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .status-chip { font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
 .status-chip.done { background: #dcf5e3; color: #1a5c2e; }
 .status-chip.todo { background: var(--bg); color: var(--text-muted); }
+.link-line { font-size: 0.85rem; margin-bottom: 10px; }
+.link-line a { color: var(--accent); font-weight: 700; word-break: break-all; }
+.link-line .link-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
 .feedback-row { display: flex; gap: 8px; align-items: flex-start; }
 .feedback-row textarea { flex: 1; min-height: 50px; padding: 8px 10px; font-size: 0.85rem; }
 .feedback-row button {
@@ -22,26 +25,14 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
   font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .saved-flash { color: var(--accent); font-size: 0.72rem; margin-left: 6px; }
-
-.expand-btn {
-  width: 100%; padding: 8px; margin-bottom: 12px; border: 1.5px solid var(--border); border-radius: 8px;
-  background: var(--bg); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
-}
-.detail-wrap { margin-bottom: 12px; }
-.detail-field { background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-.detail-field-label { font-size: 0.78rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
-.detail-item { font-size: 0.85rem; padding: 4px 0; border-bottom: 1px solid var(--border); }
-.detail-item:last-child { border-bottom: none; }
-.detail-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
-.detail-empty { font-size: 0.8rem; color: var(--text-muted); }
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <div class="header">
-    <h1>🧪 2차시 관리 (교사용)</h1>
-    <p>반별로 각 모둠의 탐구 계획 작성 현황을 보고 피드백을 남기세요.</p>
+    <h1>📽️ 4차시 관리 (교사용)</h1>
+    <p>반별로 각 모둠의 발표자료(캔바 링크) 저장 현황을 보고 피드백을 남기세요.</p>
   </div>
 
   <div class="step active" id="step-pw">
@@ -55,8 +46,8 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 
   <div class="step" id="step-main" style="display:none">
     <div class="who-banner">
-      <span>2차시 관리</span>
-      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a></div>
+      <span>4차시 관리</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a></div>
     </div>
 
     <div class="card">
@@ -73,19 +64,14 @@ const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 const TARGET_GRADE = 3;
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, itemsAll = {}, feedbackAll = {}, titleAll = {}, roster = {};
+let finalGroups = {}, posts = {}, preferences = {}, titleAll = {}, canvaLinkAll = {}, feedbackAll = {}, roster = {};
 let selectedBan = '';
-let expanded = {}; // topicId -> bool
-
-const FIELD_LABELS = [
-  ['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'],
-  ['steps', '실험과정'], ['precautions', '유의사항'], ['memo', '자유메모'],
-];
 
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
 
 window.checkPw = function() {
   const v = document.getElementById('pwInput').value;
@@ -111,20 +97,21 @@ async function loadYear() {
 async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
-  const [fg, p, pref, it, fb, tt] = await Promise.all([
+  const s4 = `${DB_URL}/years/${YEAR}/exhibition/s4`;
+  const [fg, p, pref, tt, cl, fb] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
-    fetch(`${s2}/items.json`).then(r => r.json()),
-    fetch(`${s2}/feedback.json`).then(r => r.json()),
     fetch(`${s2}/title.json`).then(r => r.json()),
+    fetch(`${s4}/canvaLink.json`).then(r => r.json()),
+    fetch(`${s4}/feedback.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
   preferences = pref || {};
-  itemsAll = it || {};
-  feedbackAll = fb || {};
   titleAll = tt || {};
+  canvaLinkAll = cl || {};
+  feedbackAll = fb || {};
 }
 
 function bansAvailable() {
@@ -157,29 +144,16 @@ function memberLabel(studentId) {
   return esc(studentId);
 }
 
-function itemMetaText(it) {
-  const author = `작성자: ${esc(it.authorName)}`;
-  return it.lastEditor && it.lastEditor !== it.author ? `${author} · 최종수정자: ${esc(it.lastEditorName)}` : author;
+function linkLine(topicId) {
+  const link = canvaLinkAll[topicId];
+  if (!link || !link.url) return '<div class="link-line" style="color:var(--text-muted)">아직 저장된 링크가 없습니다.</div>';
+  return `<div class="link-line"><a href="${escAttr(link.url)}" target="_blank" rel="noopener">${esc(link.url)}</a>
+    <div class="link-meta">최종 수정: ${esc(link.lastEditorName)}</div></div>`;
 }
-
-function detailBlock(topicId) {
-  const groupItems = itemsAll[topicId] || {};
-  return FIELD_LABELS.map(([key, label]) => {
-    const list = Object.entries(groupItems[key] || {}).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
-    const rows = list.map(([, it], i) => `<div class="detail-item">${key === 'steps' ? `${i + 1}. ` : '· '}${esc(it.text)}<div class="detail-meta">${itemMetaText(it)}</div></div>`).join('')
-      || '<div class="detail-empty">아직 없음</div>';
-    return `<div class="detail-field"><div class="detail-field-label">${label}</div>${rows}</div>`;
-  }).join('');
-}
-
-window.toggleExpand = function(topicId) {
-  expanded[topicId] = !expanded[topicId];
-  render();
-};
 
 function render() {
   const wrap = document.getElementById('groupList');
-  const groups = {}; // topicId -> [studentId,...]
+  const groups = {};
   Object.entries(finalGroups).forEach(([sid, g]) => {
     if (String(g.ban) !== selectedBan) return;
     (groups[g.topicId] = groups[g.topicId] || []).push(sid);
@@ -192,22 +166,18 @@ function render() {
 
   wrap.innerHTML = topicIds.map(topicId => {
     const post = posts[topicId] || {};
-    const groupItems = itemsAll[topicId] || {};
-    const fb = feedbackAll[topicId];
     const t = titleAll[topicId];
+    const fb = feedbackAll[topicId];
+    const hasLink = !!(canvaLinkAll[topicId] && canvaLinkAll[topicId].url);
 
     return `<div class="group-card">
       <h2>${t && t.text ? esc(t.text) : '(제목 미정)'}</h2>
       <div class="members">${esc(post.question || topicId)}</div>
       <div class="members">${groups[topicId].map(memberLabel).join(', ')}</div>
       <div class="status-row">
-        ${FIELD_LABELS.map(([key, label]) => {
-          const n = Object.keys(groupItems[key] || {}).length;
-          return `<span class="status-chip ${n ? 'done' : 'todo'}">${label} ${n}개</span>`;
-        }).join('')}
+        <span class="status-chip ${hasLink ? 'done' : 'todo'}">캔바 링크 ${hasLink ? '저장됨' : '없음'}</span>
       </div>
-      <button class="expand-btn" onclick="toggleExpand('${topicId}')">${expanded[topicId] ? '▴ 접기' : '▾ 작성 내용 펼치기'}</button>
-      ${expanded[topicId] ? `<div class="detail-wrap">${detailBlock(topicId)}</div>` : ''}
+      ${linkLine(topicId)}
       <div class="feedback-row">
         <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>
         <button onclick="saveFeedback('${topicId}')">저장</button>
@@ -220,7 +190,7 @@ function render() {
 window.saveFeedback = async function(topicId) {
   const text = document.getElementById('fb-' + topicId).value.trim();
   const payload = { text, ts: Date.now() };
-  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s2/feedback/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/feedback/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
   feedbackAll[topicId] = payload;
   const flash = document.getElementById('flash-' + topicId);
   if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
