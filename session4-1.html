@@ -14,9 +14,15 @@
 .member-list { font-size: 0.82rem; color: var(--text-muted); }
 .member-list .me { color: var(--text); font-weight: 700; }
 
-.guide-list { font-size: 0.88rem; line-height: 1.7; padding-left: 20px; margin: 0 0 12px; }
-.guide-list b { color: var(--text); }
-.guide-tip { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; }
+.guide-step { display: flex; gap: 10px; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+.guide-step .guide-num {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  font-size: 0.82rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
+}
+.guide-step .guide-body { font-size: 0.88rem; line-height: 1.55; }
+.guide-step .guide-title { font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.guide-step .guide-desc { color: var(--text-muted); }
+.guide-tip { background: var(--bg); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.6; }
 .guide-tip b { color: var(--accent); }
 
 .link-row { display: flex; gap: 8px; }
@@ -87,15 +93,21 @@ window.saveLink = async function() {
   render();
 };
 
-const GUIDE_HTML = `
-  <ol class="guide-list">
-    <li><b>제목</b>: 1차시에서 만들었던 질문을 그대로 제목으로 쓰고, 발표자(모둠원) 이름을 함께 적습니다.</li>
-    <li><b>가설</b>: 독립변인, 종속변인과 함께 가설을 작성합니다. (1차시 내용 그대로 가져오기)</li>
-    <li><b>탐구계획</b>: 2차시에 정리했던 준비물, 탐구과정(순서대로), 관찰·측정 가능한 변인 설정, 통제 변인 등을 담습니다. 탐구계획은 슬라이드 개수를 필요한 만큼 추가하세요.</li>
-    <li><b>탐구결과</b>: 3차시 ①에서 작성한 실험 결과(사진, 그래프, 표 등)를 슬라이드에 옮겨 담습니다.</li>
-    <li><b>결과분석</b>: 3차시 ②에서 정리한 예측·결과·결론·원리에 더해서, 모둠원 종합 토의를 통해 우리 실험의 의의가 무엇이고 결론이 무엇인지, 무엇을 알 수 있었는지 등을 정리해 적습니다.</li>
-    <li><b>(필요하다면) 체험 콘텐츠</b>: 관객이 직접 체험해볼 수 있는 활동을 준비했다면, 그 활동을 어떻게 진행하는지 설명하는 슬라이드도 넣습니다.</li>
-  </ol>
+const GUIDE_STEPS = [
+  { title: '제목', desc: '1차시에서 만들었던 질문을 그대로 제목으로 쓰고, 발표자(모둠원) 이름을 함께 적습니다.' },
+  { title: '가설', desc: '독립변인, 종속변인과 함께 가설을 작성합니다. (1차시 내용 그대로 가져오기)' },
+  { title: '탐구계획', desc: '2차시에 정리했던 준비물, 탐구과정(순서대로), 관찰·측정 가능한 변인 설정, 통제 변인 등을 담습니다. 탐구계획은 슬라이드 개수를 필요한 만큼 추가하세요.' },
+  { title: '탐구결과', desc: '3차시 ①에서 작성한 실험 결과(사진, 그래프, 표 등)를 슬라이드에 옮겨 담습니다.' },
+  { title: '결과분석', desc: '3차시 ②에서 정리한 예측·결과·결론·원리에 더해서, 모둠원 종합 토의를 통해 우리 실험의 의의가 무엇이고 결론이 무엇인지, 무엇을 알 수 있었는지 등을 정리해 적습니다.' },
+  { title: '(필요하다면) 체험 콘텐츠', desc: '관객이 직접 체험해볼 수 있는 활동을 준비했다면, 그 활동을 어떻게 진행하는지 설명하는 슬라이드도 넣습니다.' },
+];
+
+const GUIDE_HTML = GUIDE_STEPS.map(function(s, i) {
+  return `<div class="guide-step">
+    <div class="guide-num">${i + 1}</div>
+    <div class="guide-body"><div class="guide-title">${esc(s.title)}</div><div class="guide-desc">${esc(s.desc)}</div></div>
+  </div>`;
+}).join('') + `
   <div class="guide-tip">
     💡 <b>팁</b><br>
     · 캔바에서 "공유 → 링크 보기"로 복사한 링크를 아래 칸에 붙여넣으면 됩니다. 공유 권한이 "링크가 있는 모든 사용자"로 설정돼 있는지 확인하세요.<br>
