@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5차시 · 대본 작성하기 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.feedback-banner { background: var(--accent); color: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.88rem; line-height: 1.5; }
+.feedback-banner b { display: block; font-size: 0.76rem; opacity: 0.85; margin-bottom: 4px; }
+
+textarea.script-input { width: 100%; min-height: 120px; padding: 10px 12px; font-size: 0.9rem; line-height: 1.6; font-family: inherit; resize: vertical; }
+.script-save-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.script-save-row button {
+  padding: 9px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.script-save-row button.ghost { background: var(--bg); color: var(--text-muted); }
+.script-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
+
+.expand-btn {
+  width: 100%; padding: 8px; margin-bottom: 12px; border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.friend-script { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.friend-script .friend-name { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+.friend-script .friend-text { font-size: 0.86rem; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+.friend-script .friend-empty { font-size: 0.82rem; color: var(--text-muted); }
+.copy-btn { margin-top: 6px; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer; }
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.final-text { font-size: 0.9rem; line-height: 1.65; white-space: pre-wrap; background: var(--bg); border-radius: 10px; padding: 12px 14px; }
+.lock-banner { background: var(--danger-soft, #fdecea); color: var(--danger, #c0392b); border-radius: 10px; padding: 10px 12px; font-size: 0.84rem; font-weight: 600; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🎤 5차시 · 대본 작성하기</h1>
+    <p>전람회 발표 때 읽을 대본을 모둠원 각자 써보고, 그 내용을 모아 하나의 최종 대본으로 완성해보자.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+const LOCK_TTL_MS = 60000; // 이 시간 동안 갱신이 없으면 잠금이 풀린 것으로 본다
+const LOCK_RENEW_MS = 20000;
+
+let YEAR = null;
+let base = null;
+let topicId = null;
+let post = {};
+let groupmates = [];
+let myScripts = {}; // { [studentId]: { text, updatedAt } }
+let finalScript = null; // { text, lastEditor, lastEditorName, updatedAt }
+let finalLock = null; // { studentId, studentName, startedAt }
+let feedback = null;
+let friendsOpen = false;
+let finalEditing = false;
+let renewTimer = null;
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+function lockActive(lock) {
+  return !!(lock && lock.studentId && (Date.now() - (lock.startedAt || 0) < LOCK_TTL_MS));
+}
+
+async function loadAll() {
+  const [ms, fs, lk, fb] = await Promise.all([
+    fetch(`${base}/myScript/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/finalScript/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/finalLock/${topicId}.json`).then(r => r.json()),
+    fetch(`${base}/feedback/${topicId}.json`).then(r => r.json()),
+  ]);
+  myScripts = ms || {};
+  finalScript = fs || null;
+  finalLock = lk || null;
+  feedback = fb || null;
+  const active = document.activeElement;
+  if (active && (active.id === 'myScriptInput' || active.id === 'finalScriptInput')) return; // 입력 중이면 폴링으로 덮어쓰지 않는다
+  render();
+}
+
+window.saveMyScript = async function() {
+  const input = document.getElementById('myScriptInput');
+  const text = input.value.trim();
+  const payload = { text, updatedAt: Date.now() };
+  await fetch(`${base}/myScript/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  myScripts[student.id] = payload;
+  render();
+};
+
+window.toggleFriends = function() {
+  friendsOpen = !friendsOpen;
+  render();
+};
+
+window.copyFriendScript = function(studentId) {
+  const text = (myScripts[studentId] && myScripts[studentId].text) || '';
+  navigator.clipboard.writeText(text).then(function() {
+    const btn = document.getElementById('copyBtn-' + studentId);
+    if (btn) { const orig = btn.textContent; btn.textContent = '복사됨!'; setTimeout(function() { btn.textContent = orig; }, 1500); }
+  });
+};
+
+async function renewLock() {
+  await fetch(`${base}/finalLock/${topicId}.json`, {
+    method: 'PUT',
+    body: JSON.stringify({ studentId: student.id, studentName: student.name, startedAt: Date.now() }),
+  });
+}
+
+window.startEditFinal = async function() {
+  const fresh = await fetch(`${base}/finalLock/${topicId}.json`).then(r => r.json());
+  if (lockActive(fresh) && fresh.studentId !== student.id) {
+    finalLock = fresh;
+    render();
+    return;
+  }
+  await renewLock();
+  finalLock = { studentId: student.id, studentName: student.name, startedAt: Date.now() };
+  finalEditing = true;
+  render();
+  renewTimer = setInterval(renewLock, LOCK_RENEW_MS);
+};
+
+async function releaseLock() {
+  if (renewTimer) { clearInterval(renewTimer); renewTimer = null; }
+  await fetch(`${base}/finalLock/${topicId}.json`, { method: 'DELETE' });
+  finalLock = null;
+}
+
+window.cancelEditFinal = async function() {
+  finalEditing = false;
+  await releaseLock();
+  render();
+};
+
+window.saveFinal = async function() {
+  const input = document.getElementById('finalScriptInput');
+  const text = input.value.trim();
+  const payload = { text, lastEditor: student.id, lastEditorName: student.name, updatedAt: Date.now() };
+  await fetch(`${base}/finalScript/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  finalScript = payload;
+  finalEditing = false;
+  await releaseLock();
+  render();
+};
+
+function myScriptCard() {
+  const mine = myScripts[student.id];
+  return `<div class="group-card">
+    <h2>① 나의 대본</h2>
+    <p class="hint" style="margin-top:-4px">나만 수정할 수 있어요. 발표 때 내가 말할 부분을 자유롭게 써보자.</p>
+    <textarea class="script-input" id="myScriptInput" placeholder="내가 발표할 내용을 자유롭게 써보자">${esc(mine ? mine.text : '')}</textarea>
+    <div class="script-save-row"><button onclick="saveMyScript()">저장</button></div>
+    <div class="script-meta">${mine && mine.updatedAt ? '마지막 저장: 방금 전' : '아직 저장하지 않았습니다.'}</div>
+  </div>`;
+}
+
+function friendsCard() {
+  const friends = groupmates.filter(function(m) { return m.studentId !== student.id; });
+  const body = friendsOpen ? friends.map(function(m) {
+    const s = myScripts[m.studentId];
+    const text = s && s.text ? `<div class="friend-text">${esc(s.text)}</div><button class="copy-btn" id="copyBtn-${m.studentId}" onclick="copyFriendScript('${m.studentId}')">복사</button>` : '<div class="friend-empty">아직 작성하지 않았습니다.</div>';
+    return `<div class="friend-script"><div class="friend-name">${esc(m.num)}번 ${esc(m.name)}</div>${text}</div>`;
+  }).join('') || '<div class="friend-empty">모둠원이 없습니다.</div>' : '';
+  return `<div class="group-card">
+    <h2>② 친구들이 작성한 내용</h2>
+    <p class="hint" style="margin-top:-4px">읽기만 가능하고 수정은 할 수 없어요. 필요한 부분은 복사해서 최종 대본에 붙여넣자.</p>
+    <button class="expand-btn" onclick="toggleFriends()">${friendsOpen ? '▴ 접기' : '▾ 펼쳐보기'}</button>
+    ${body}
+  </div>`;
+}
+
+function finalCard() {
+  const active = lockActive(finalLock);
+  const lockedByOther = active && finalLock.studentId !== student.id;
+  let body;
+  if (finalEditing) {
+    body = `<textarea class="script-input" id="finalScriptInput" style="min-height:180px">${esc(finalScript ? finalScript.text : '')}</textarea>
+      <div class="script-save-row">
+        <button class="ghost" onclick="cancelEditFinal()">취소</button>
+        <button onclick="saveFinal()">저장</button>
+      </div>`;
+  } else {
+    body = `<div class="final-text">${finalScript && finalScript.text ? esc(finalScript.text) : '<span class="friend-empty">아직 작성된 최종 대본이 없습니다.</span>'}</div>
+      <div class="script-save-row">
+        <button ${lockedByOther ? 'disabled' : ''} onclick="startEditFinal()">${lockedByOther ? '수정 중...' : '수정하기'}</button>
+      </div>
+      <div class="script-meta">${finalScript && finalScript.updatedAt ? `최종 수정: ${esc(finalScript.lastEditorName)}` : ''}</div>`;
+  }
+  return `<div class="group-card">
+    <h2>③ 최종 대본</h2>
+    <p class="hint" style="margin-top:-4px">모둠원 누구나 수정할 수 있어요. 단, 한 번에 한 사람만 수정할 수 있고, 다른 사람이 수정 중이면 잠깐 기다려야 해요.</p>
+    ${lockedByOther ? `<div class="lock-banner">🔒 ${esc(finalLock.studentName)}님이 수정 중입니다. 잠시 후 다시 시도해주세요.</div>` : ''}
+    ${body}
+  </div>`;
+}
+
+function render() {
+  const html = `
+    ${feedback && feedback.text ? `<div class="feedback-banner"><b>선생님 피드백</b>${esc(feedback.text)}</div>` : ''}
+
+    <div class="group-card">
+      <h2>${esc(post.question || '')}</h2>
+      <div class="post-hypo">
+        <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+        ${esc(post.hypothesis)}
+      </div>
+      <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+    </div>
+
+    ${myScriptCard()}
+    ${friendsCard()}
+    ${finalCard()}
+  `;
+  document.getElementById('content').innerHTML = html;
+
+  const myInput = document.getElementById('myScriptInput');
+  if (myInput) myInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveMyScript(); } });
+  const finalInput = document.getElementById('finalScriptInput');
+  if (finalInput) finalInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveFinal(); } });
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    base = `${DB_URL}/years/${YEAR}/exhibition/s5`;
+    const s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const [postRes, finalAllRes, prefAllRes] = await Promise.all([
+      fetch(`${s1base}/posts/${topicId}.json`).then(r => r.json()),
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+    ]);
+    post = postRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    await loadAll();
+    setInterval(loadAll, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
