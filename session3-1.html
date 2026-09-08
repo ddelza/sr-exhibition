@@ -195,6 +195,9 @@ function renderChartSVG(b) {
   }).join('');
   axisHtml += '<line x1="' + PAD_L + '" y1="' + (H - PAD_B) + '" x2="' + (W - PAD_R) + '" y2="' + (H - PAD_B) + '" stroke="#999"/>' +
     '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (H - PAD_B) + '" stroke="#999"/>';
+  // 축 제목 — x축은 우측 하단, y축은 좌측 상단에 작게 표시
+  axisHtml += '<text x="' + (W - PAD_R) + '" y="' + (H - 4) + '" font-size="9" fill="#666" font-weight="700" text-anchor="end">' + esc(b.xLabel || 'x') + '</text>';
+  axisHtml += '<text x="2" y="' + (PAD_T - 7) + '" font-size="9" fill="#666" font-weight="700" text-anchor="start">' + esc(b.yLabel || 'y') + '</text>';
 
   let dataHtml = '';
   if (b.chartType === 'bar') {
