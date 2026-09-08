@@ -141,12 +141,17 @@ function chartDash(i) {
 }
 function niceTicks(min, max, count) {
   if (min === max) { min -= 1; max += 1; }
+  // 눈금선의 실제 좌표는 정확한 값(v) 그대로 써야 한다 — 라벨 표시용으로 반올림한 값을
+  // 좌표 계산에도 써버리면 눈금선이 그래프 위쪽 경계를 넘어가 잘려 보이는 사고가 난다
+  // (예: 6.72를 7로 반올림해 그 위치에 선을 그리면 실제 6.72보다 위, 즉 플롯 영역
+  // 바깥으로 선이 삐져나간다). 그래서 좌표용 값(v)과 화면에 보여줄 라벨은 분리한다.
+  const step = (max - min) / count;
   const ticks = [];
-  for (let i = 0; i <= count; i++) {
-    const v = min + (max - min) * i / count;
-    ticks.push(Math.round(v * 100) / 100);
-  }
+  for (let i = 0; i <= count; i++) ticks.push(min + step * i);
   return ticks;
+}
+function formatTickLabel(v, step) {
+  return step >= 1 ? Math.round(v) : Math.round(v * 100) / 100;
 }
 function seriesOf(b) {
   if (b.series && b.series.length) return b.series;
@@ -185,10 +190,12 @@ function renderChartSVG(b) {
   const slotW = plotW / cats.length;
   const catX = function(i) { return PAD_L + slotW * (i + 0.5); };
 
-  let axisHtml = niceTicks(yMin, yMax, 4).map(function(t) {
+  const yTicks = niceTicks(yMin, yMax, 4);
+  const yTickStep = yTicks.length > 1 ? yTicks[1] - yTicks[0] : 1;
+  let axisHtml = yTicks.map(function(t) {
     const y = sy(t);
     return '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#e5e5e5"/>' +
-      '<text x="' + (PAD_L - 6) + '" y="' + (y + 3) + '" font-size="9" fill="#888" text-anchor="end">' + t + '</text>';
+      '<text x="' + (PAD_L - 6) + '" y="' + (y + 3) + '" font-size="9" fill="#888" text-anchor="end">' + formatTickLabel(t, yTickStep) + '</text>';
   }).join('');
   axisHtml += cats.map(function(c, i) {
     return '<text x="' + catX(i) + '" y="' + (H - PAD_B + 14) + '" font-size="9" fill="#888" text-anchor="middle">' + esc(c) + '</text>';

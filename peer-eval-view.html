@@ -86,6 +86,30 @@ function groupCard(entries) {
   </div>`;
 }
 
+function givenCard(entries) {
+  const rows = mineList(entries).map(function(x) {
+    const groupLabel = x.targetTitle || '(제목 미정)';
+    if (x.kind === 'member') {
+      return `<div class="eval-item">
+        <div class="eval-meta"><span class="sess-tag">${x.sess}차시</span> · ${esc(groupLabel)} · ${esc(x.targetName)}에게</div>
+        <div class="eval-text">${esc(x.data.text) || '(내용 없음)'}</div>
+      </div>`;
+    }
+    return `<div class="eval-item">
+      <div class="eval-meta"><span class="sess-tag">${x.sess}차시</span> · ${esc(groupLabel)}에게</div>
+      <div class="eval-label">특히 인상깊었던 장면</div>
+      <div class="eval-text">${esc(x.data.scene) || '(내용 없음)'}</div>
+      <div class="eval-label">알게 된 점</div>
+      <div class="eval-text">${esc(x.data.learned) || '(내용 없음)'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="group-card">
+    <h2>③ 내가 작성한 동료평가</h2>
+    <p class="hint" style="margin-top:-4px">내가 다른 모둠을 돌며 남긴 동료평가 전체</p>
+    ${rows || '<div class="empty-state">아직 작성한 동료평가가 없습니다.</div>'}
+  </div>`;
+}
+
 (async function init() {
   if (!student) return;
   document.getElementById('whoLabel').textContent = srWhoLabel(student);
@@ -101,11 +125,18 @@ function groupCard(entries) {
     }
     const topicId = mine.topicId;
 
-    const [pm6, pm7, pg6, pg7] = await Promise.all([
+    const [pm6, pm7, pg6, pg7, pmAll6, pmAll7, pgAll6, pgAll7, titleAll, posts, prefAll] = await Promise.all([
       fetch(`${base}/6/perMember/${topicId}/${student.id}.json`).then(r => r.json()),
       fetch(`${base}/7/perMember/${topicId}/${student.id}.json`).then(r => r.json()),
       fetch(`${base}/6/perGroup/${topicId}.json`).then(r => r.json()),
       fetch(`${base}/7/perGroup/${topicId}.json`).then(r => r.json()),
+      fetch(`${base}/6/perMember.json`).then(r => r.json()),
+      fetch(`${base}/7/perMember.json`).then(r => r.json()),
+      fetch(`${base}/6/perGroup.json`).then(r => r.json()),
+      fetch(`${base}/7/perGroup.json`).then(r => r.json()),
+      fetch(`${DB_URL}/years/${YEAR}/exhibition/s2/title.json`).then(r => r.json()),
+      fetch(`${s1base}/posts.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
     ]);
 
     const personalEntries = []
@@ -115,7 +146,31 @@ function groupCard(entries) {
       .concat(Object.values(pg6 || {}).map(function(d) { return { sess: 6, data: d }; }))
       .concat(Object.values(pg7 || {}).map(function(d) { return { sess: 7, data: d }; }));
 
-    document.getElementById('content').innerHTML = personalCard(personalEntries) + groupCard(groupEntries);
+    const tt = titleAll || {}, ps = posts || {}, pa = prefAll || {};
+    function groupTitle(tid) { return (tt[tid] && tt[tid].text) || (ps[tid] && ps[tid].question) || tid; }
+
+    // 내가 다른 모둠에 남긴 평가는 target(모둠/모둠원) 아래 내 studentId로 키가 잡혀 있어서,
+    // 전체 트리를 훑어 evaluatorId(키)가 나인 항목만 뽑아낸다.
+    const givenEntries = [];
+    [[6, pmAll6], [7, pmAll7]].forEach(function([sess, pmAll]) {
+      Object.entries(pmAll || {}).forEach(function([targetTopicId, byStudent]) {
+        Object.entries(byStudent || {}).forEach(function([targetStudentId, byEval]) {
+          const mine = (byEval || {})[student.id];
+          if (mine) {
+            const targetPref = pa[targetStudentId] || {};
+            givenEntries.push({ sess, kind: 'member', targetTitle: groupTitle(targetTopicId), targetName: `${targetPref.num || ''}번 ${targetPref.name || targetStudentId}`, data: mine });
+          }
+        });
+      });
+    });
+    [[6, pgAll6], [7, pgAll7]].forEach(function([sess, pgAll]) {
+      Object.entries(pgAll || {}).forEach(function([targetTopicId, byEval]) {
+        const mine = (byEval || {})[student.id];
+        if (mine) givenEntries.push({ sess, kind: 'group', targetTitle: groupTitle(targetTopicId), data: mine });
+      });
+    });
+
+    document.getElementById('content').innerHTML = personalCard(personalEntries) + groupCard(groupEntries) + givenCard(givenEntries);
   } catch (e) {
     document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
   }
