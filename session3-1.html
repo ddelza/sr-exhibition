@@ -209,18 +209,24 @@ function renderChartSVG(b) {
         if (!p) return;
         const gx0 = catX(ci) - groupW / 2 + si * barW;
         const y0 = sy(0), y1 = sy(p.y);
-        dataHtml += '<rect x="' + gx0 + '" y="' + Math.min(y0, y1) + '" width="' + (barW - 1) + '" height="' + Math.abs(y1 - y0) + '" fill="' + chartColor(si) + '"/>';
+        const tip = (s.name ? s.name + ' · ' : '') + c + ': ' + p.y;
+        dataHtml += '<rect x="' + gx0 + '" y="' + Math.min(y0, y1) + '" width="' + (barW - 1) + '" height="' + Math.abs(y1 - y0) + '" fill="' + chartColor(si) + '"><title>' + esc(tip) + '</title></rect>';
       });
     });
   } else {
     series.forEach(function(s, si) {
       const pts = cats.map(function(c, ci) {
         const p = s.points.filter(function(pt) { return pt.x === c; })[0];
-        return p ? { cx: catX(ci), cy: sy(p.y) } : null;
+        return p ? { cx: catX(ci), cy: sy(p.y), x: c, y: p.y } : null;
       }).filter(Boolean);
       const dash = chartDash(si);
       dataHtml += '<polyline points="' + pts.map(function(p) { return p.cx + ',' + p.cy; }).join(' ') + '" fill="none" stroke="' + chartColor(si) + '" stroke-width="2"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
-      dataHtml += pts.map(function(p) { return '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="3" fill="' + chartColor(si) + '"/>'; }).join('');
+      dataHtml += pts.map(function(p) {
+        const tip = (s.name ? s.name + ' · ' : '') + p.x + ': ' + p.y;
+        // 실제 점(반지름 3)은 그대로 두고, 마우스로 정확히 맞히기 쉽도록 투명한 넓은 원을 위에 겹쳐 호버 영역을 넓힌다
+        return '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="3" fill="' + chartColor(si) + '"/>' +
+          '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="8" fill="transparent"><title>' + esc(tip) + '</title></circle>';
+      }).join('');
     });
   }
 

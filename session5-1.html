@@ -26,6 +26,11 @@ textarea.script-input { width: 100%; min-height: 120px; padding: 10px 12px; font
 .script-save-row button.ghost { background: var(--bg); color: var(--text-muted); }
 .script-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
 
+.saved-preview { margin-top: 12px; border-left: 4px solid var(--accent); background: var(--bg); border-radius: 0 10px 10px 0; padding: 10px 12px; }
+.saved-preview-label { font-size: 0.74rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.saved-preview-text { font-size: 0.85rem; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+.saved-preview-text.empty { color: var(--text-muted); }
+
 .expand-btn {
   width: 100%; padding: 8px; margin-bottom: 12px; border: 1.5px solid var(--border); border-radius: 8px;
   background: var(--bg); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
@@ -76,6 +81,14 @@ let feedback = null;
 let friendsOpen = false;
 let finalEditing = false;
 let renewTimer = null;
+// 포커스만 보고 판단하면, 저장하지 않은 채 다른 곳을 잠깐 터치/클릭해 포커스가 빠졌을 때
+// 폴링이 그 순간 화면을 덮어써서 입력 중이던 내용이 사라진다. 그래서 실제로 저장 안 된
+// 변경이 있는지를 별도 플래그로 추적해서, 저장 전까지는 포커스와 무관하게 폴링이 화면을
+// 다시 그리지 않게 한다.
+let myScriptDirty = false;
+let finalDirty = false;
+let myScriptAutosaveTimer = null;
+const AUTOSAVE_IDLE_MS = 3000; // 입력을 멈춘 지 이만큼 지나면 자동으로 임시저장
 
 function esc(str) {
   if (!str) return '';
@@ -104,19 +117,40 @@ async function loadAll() {
   finalScript = fs || null;
   finalLock = lk || null;
   feedback = fb || null;
-  const active = document.activeElement;
-  if (active && (active.id === 'myScriptInput' || active.id === 'finalScriptInput')) return; // 입력 중이면 폴링으로 덮어쓰지 않는다
+  if (myScriptDirty || finalDirty) return; // 저장 안 된 변경사항이 있으면 폴링 결과로 화면을 덮어쓰지 않는다
   render();
 }
 
 window.saveMyScript = async function() {
+  clearTimeout(myScriptAutosaveTimer);
   const input = document.getElementById('myScriptInput');
   const text = input.value.trim();
   const payload = { text, updatedAt: Date.now() };
   await fetch(`${base}/myScript/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
   myScripts[student.id] = payload;
+  myScriptDirty = false;
   render();
 };
+
+// 작성을 멈춘 지 3초가 지나면 화면을 다시 그리지 않고 조용히 서버에 저장만 해서,
+// 저장 버튼을 안 눌러도 최근 내용이 계속 안전하게 보관되게 한다(입력 중 커서 위치가
+// 흐트러지지 않도록 render()는 호출하지 않고, 안내 문구만 직접 갱신한다).
+async function autosaveMyScript() {
+  const input = document.getElementById('myScriptInput');
+  if (!input) return;
+  const text = input.value.trim();
+  const payload = { text, updatedAt: Date.now() };
+  await fetch(`${base}/myScript/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  myScripts[student.id] = payload;
+  myScriptDirty = false;
+  const meta = document.getElementById('myScriptMeta');
+  if (meta) meta.textContent = '자동 저장됨 · 방금 전';
+  const saved = document.getElementById('myScriptSavedText');
+  if (saved) {
+    saved.textContent = text || '(아직 저장된 내용 없음)';
+    saved.classList.toggle('empty', !text);
+  }
+}
 
 window.toggleFriends = function() {
   friendsOpen = !friendsOpen;
@@ -148,6 +182,7 @@ window.startEditFinal = async function() {
   await renewLock();
   finalLock = { studentId: student.id, studentName: student.name, startedAt: Date.now() };
   finalEditing = true;
+  finalDirty = false;
   render();
   renewTimer = setInterval(renewLock, LOCK_RENEW_MS);
 };
@@ -160,6 +195,7 @@ async function releaseLock() {
 
 window.cancelEditFinal = async function() {
   finalEditing = false;
+  finalDirty = false;
   await releaseLock();
   render();
 };
@@ -171,27 +207,33 @@ window.saveFinal = async function() {
   await fetch(`${base}/finalScript/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
   finalScript = payload;
   finalEditing = false;
+  finalDirty = false;
   await releaseLock();
   render();
 };
 
 function myScriptCard() {
   const mine = myScripts[student.id];
+  const savedText = mine && mine.text ? esc(mine.text) : '(아직 저장된 내용 없음)';
   return `<div class="group-card">
     <h2>① 나의 대본</h2>
-    <p class="hint" style="margin-top:-4px">나만 수정할 수 있어요. 발표 때 내가 말할 부분을 자유롭게 써보자.</p>
+    <p class="hint" style="margin-top:-4px">나만 수정할 수 있어요. 작성을 멈추면 잠시 후 자동으로 저장되고, 저장 버튼을 눌러도 바로 저장돼요.</p>
     <textarea class="script-input" id="myScriptInput" placeholder="내가 발표할 내용을 자유롭게 써보자">${esc(mine ? mine.text : '')}</textarea>
     <div class="script-save-row"><button onclick="saveMyScript()">저장</button></div>
-    <div class="script-meta">${mine && mine.updatedAt ? '마지막 저장: 방금 전' : '아직 저장하지 않았습니다.'}</div>
+    <div class="script-meta" id="myScriptMeta">${mine && mine.updatedAt ? '마지막 저장: 방금 전' : '아직 저장하지 않았습니다.'}</div>
+    <div class="saved-preview">
+      <div class="saved-preview-label">💾 서버에 저장된 내용</div>
+      <div class="saved-preview-text${mine && mine.text ? '' : ' empty'}" id="myScriptSavedText">${savedText}</div>
+    </div>
   </div>`;
 }
 
 function friendsCard() {
-  const friends = groupmates.filter(function(m) { return m.studentId !== student.id; });
-  const body = friendsOpen ? friends.map(function(m) {
+  const body = friendsOpen ? groupmates.map(function(m) {
+    const isMe = m.studentId === student.id;
     const s = myScripts[m.studentId];
     const text = s && s.text ? `<div class="friend-text">${esc(s.text)}</div><button class="copy-btn" id="copyBtn-${m.studentId}" onclick="copyFriendScript('${m.studentId}')">복사</button>` : '<div class="friend-empty">아직 작성하지 않았습니다.</div>';
-    return `<div class="friend-script"><div class="friend-name">${esc(m.num)}번 ${esc(m.name)}</div>${text}</div>`;
+    return `<div class="friend-script"><div class="friend-name">${esc(m.num)}번 ${esc(m.name)}${isMe ? ' (나)' : ''}</div>${text}</div>`;
   }).join('') || '<div class="friend-empty">모둠원이 없습니다.</div>' : '';
   return `<div class="group-card">
     <h2>② 친구들이 작성한 내용</h2>
@@ -246,9 +288,19 @@ function render() {
   document.getElementById('content').innerHTML = html;
 
   const myInput = document.getElementById('myScriptInput');
-  if (myInput) myInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveMyScript(); } });
+  if (myInput) {
+    myInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveMyScript(); } });
+    myInput.addEventListener('input', () => {
+      myScriptDirty = true;
+      clearTimeout(myScriptAutosaveTimer);
+      myScriptAutosaveTimer = setTimeout(autosaveMyScript, AUTOSAVE_IDLE_MS);
+    });
+  }
   const finalInput = document.getElementById('finalScriptInput');
-  if (finalInput) finalInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveFinal(); } });
+  if (finalInput) {
+    finalInput.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveFinal(); } });
+    finalInput.addEventListener('input', () => { finalDirty = true; });
+  }
 }
 
 (async function init() {
