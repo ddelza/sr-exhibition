@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7차시 · 전람회 2차발표 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.role-banner { border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; font-size: 0.9rem; line-height: 1.5; }
+.role-banner.present { background: var(--accent-soft); color: var(--accent); }
+.role-banner.listen { background: var(--bg); color: var(--text); }
+.ref-links { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ref-links a { font-size: 0.8rem; font-weight: 700; color: var(--accent); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; text-decoration: none; }
+
+.expand-btn {
+  width: 100%; padding: 8px; margin-bottom: 12px; border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text-muted); font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.target-card { border: 1.5px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.target-card .target-order { font-size: 0.72rem; font-weight: 700; color: var(--accent); }
+.target-card h3 { font-size: 0.92rem; margin: 2px 0 10px; }
+.member-field { margin-bottom: 10px; }
+.member-field label { font-size: 0.82rem; font-weight: 700; display: block; margin-bottom: 4px; }
+.member-field textarea, .field-block textarea {
+  width: 100%; padding: 8px 10px; font-size: 0.85rem; line-height: 1.5; font-family: inherit; resize: vertical; min-height: 56px;
+}
+.field-block { margin-bottom: 10px; }
+.field-block label { font-size: 0.82rem; font-weight: 700; display: block; margin-bottom: 4px; }
+.save-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+.save-row button {
+  padding: 8px 14px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.save-flash { font-size: 0.72rem; color: var(--accent); margin-top: 4px; text-align: right; min-height: 1em; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🎪 7차시 · 전람회 2차발표</h1>
+    <p>6차시와 같은 방식으로 진행하되, 1차·2차 발표자의 역할이 서로 바뀐다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+const SESSION_NUM = 7;
+const PRESENT_ROLE_THIS_SESSION = 'p2'; // 7차시엔 2차발표자가 발표, 1차발표자가 청취
+let YEAR = null;
+let s1base = null;
+let topicId = null;
+let post = {};
+let groupmates = [];
+let myRole = null;
+let targets = [];
+let targetsOpen = {};
+let canvaLink = null;
+let finalScript = null;
+let wrapup = {};
+let anyDirty = false; // 5차시에서 겪은 "포커스 이탈 후 폴링에 내용이 사라지는" 문제를 막기 위한 전역 가드
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function computeGroupOrder(ban) {
+  const [finalAll, posts] = await Promise.all([
+    fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+    fetch(`${s1base}/posts.json`).then(r => r.json()),
+  ]);
+  const fg = finalAll || {};
+  const ps = posts || {};
+  const set = new Set();
+  Object.values(fg).forEach(g => { if (String(g.ban) === String(ban)) set.add(g.topicId); });
+  const arr = [...set];
+  arr.sort((a, b) => ((ps[a] || {}).ts || 0) - ((ps[b] || {}).ts || 0));
+  return { order: arr };
+}
+
+function listenOrder(myIndex, total) {
+  const out = [];
+  for (let i = 1; i < total; i++) out.push((myIndex + i) % total);
+  return out;
+}
+
+window.toggleTarget = function(tid) {
+  targetsOpen[tid] = !targetsOpen[tid];
+  render();
+};
+
+window.saveTargetEval = async function(tid) {
+  const t = targets.find(x => x.topicId === tid);
+  const memberTexts = {};
+  t.members.forEach(function(m) {
+    const el = document.getElementById('mf-' + tid + '-' + m.studentId);
+    if (el) memberTexts[m.studentId] = el.value.trim();
+  });
+  const scene = document.getElementById('scene-' + tid).value.trim();
+  const learned = document.getElementById('learned-' + tid).value.trim();
+  const now = Date.now();
+  const writes = [];
+  t.members.forEach(function(m) {
+    writes.push(fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perMember/${tid}/${m.studentId}/${student.id}.json`, {
+      method: 'PUT', body: JSON.stringify({ evaluatorName: student.name, text: memberTexts[m.studentId] || '', updatedAt: now }),
+    }));
+  });
+  writes.push(fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perGroup/${tid}/${student.id}.json`, {
+    method: 'PUT', body: JSON.stringify({ evaluatorName: student.name, scene, learned, updatedAt: now }),
+  }));
+  await Promise.all(writes);
+  anyDirty = false;
+  const flash = document.getElementById('flash-' + tid);
+  if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
+};
+
+window.saveWrapup = async function() {
+  const input = document.getElementById('wrapupInput');
+  const text = input.value.trim();
+  const payload = { text, updatedAt: Date.now() };
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  wrapup[student.id] = payload;
+  anyDirty = false;
+  render();
+};
+
+function renderPresentBranch() {
+  const mine = wrapup[student.id];
+  return `<div class="role-banner present">🎤 오늘은 <b>발표자</b>입니다. 모둠 자리에 남아 우리 모둠 발표를 진행하세요.
+    <div class="ref-links">
+      ${canvaLink && canvaLink.url ? `<a href="${escAttr(canvaLink.url)}" target="_blank" rel="noopener">📽️ 발표자료 열기</a>` : ''}
+      ${finalScript && finalScript.text ? `<a href="session5-1.html" target="_blank">🎤 대본 다시 보기</a>` : ''}
+    </div>
+  </div>
+  <div class="group-card">
+    <h2>발표를 마친 후 — 성찰</h2>
+    <p class="hint" style="margin-top:-4px">6차시에 1차 발표자가 남겨준 피드백을 이번 발표에서 어떻게 반영했는지, 어떤 부분이 성공적이었는지 되돌아보며 적어보자.</p>
+    <div class="field-block">
+      <textarea id="wrapupInput" placeholder="피드백을 어떻게 반영했는지, 무엇이 성공적이었는지">${esc(mine ? mine.text : '')}</textarea>
+    </div>
+    <div class="save-row"><button onclick="saveWrapup()">저장</button></div>
+  </div>`;
+}
+
+function targetCard(t, idx) {
+  const isOpen = targetsOpen[t.topicId];
+  const title = (t.title && t.title.text) || t.post.question || '(제목 미정)';
+  return `<div class="target-card">
+    <div class="target-order">${idx + 1}번째로 만날 모둠</div>
+    <h3>${esc(title)}</h3>
+    <div class="member-list" style="margin-bottom:10px">${t.members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ')}</div>
+    <button class="expand-btn" onclick="toggleTarget('${t.topicId}')">${isOpen ? '▴ 접기' : '▾ 동료평가 작성하기'}</button>
+    ${isOpen ? `
+      <p class="hint" style="margin-top:-4px">실제로 발표에 참여한 모둠원에 대해서만 작성해주세요.</p>
+      ${t.members.map(function(m) {
+        const existing = (t.perMember[m.studentId] || {})[student.id];
+        return `<div class="member-field">
+          <label>${esc(m.num)}번 ${esc(m.name)} — 설명한 내용·잘한 점·아쉬운 점</label>
+          <textarea id="mf-${t.topicId}-${m.studentId}" placeholder="이 모둠원이 어떤 부분을 설명했는지, 잘한 점과 아쉬운 점을 적어보자">${esc(existing ? existing.text : '')}</textarea>
+        </div>`;
+      }).join('')}
+      <div class="field-block">
+        <label>특히 인상깊었던 장면</label>
+        <textarea id="scene-${t.topicId}">${esc((t.perGroup[student.id] || {}).scene || '')}</textarea>
+      </div>
+      <div class="field-block">
+        <label>알게 된 점 (핵심 내용·소감·궁금한 점)</label>
+        <textarea id="learned-${t.topicId}">${esc((t.perGroup[student.id] || {}).learned || '')}</textarea>
+      </div>
+      <div class="save-row"><button onclick="saveTargetEval('${t.topicId}')">저장</button></div>
+      <div class="save-flash" id="flash-${t.topicId}"></div>
+    ` : ''}
+  </div>`;
+}
+
+function renderListenBranch() {
+  return `<div class="role-banner listen">🚶 오늘은 <b>청취자</b>입니다. 아래 모둠을 순서대로 돌며 발표를 듣고 동료평가를 작성하세요.</div>
+    ${targets.map(targetCard).join('')}`;
+}
+
+async function loadWrapup() {
+  const w = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup/${topicId}.json`).then(r => r.json());
+  wrapup = w || {};
+  if (anyDirty) return;
+  render();
+}
+
+function render() {
+  const html = `
+    <div class="group-card">
+      <h2>${esc(post.question || '')}</h2>
+      <div class="post-hypo">
+        <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+        ${esc(post.hypothesis)}
+      </div>
+      <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+    </div>
+    ${myRole === PRESENT_ROLE_THIS_SESSION ? renderPresentBranch() : renderListenBranch()}
+  `;
+  document.getElementById('content').innerHTML = html;
+}
+
+document.getElementById('content').addEventListener('input', function(e) {
+  if (e.target.tagName === 'TEXTAREA') anyDirty = true;
+});
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const roleRec = await fetch(`${DB_URL}/years/${YEAR}/exhibition/presentRole/${topicId}/${student.id}.json`).then(r => r.json());
+    if (!roleRec) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 1차/2차 발표자 역할을 정하지 않았습니다. "발표차시 정하기"에서 먼저 역할을 선택해주세요.</div>';
+      return;
+    }
+    myRole = roleRec.role;
+
+    const [postRes, finalAllRes, prefAllRes] = await Promise.all([
+      fetch(`${s1base}/posts/${topicId}.json`).then(r => r.json()),
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+    ]);
+    post = postRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    if (myRole === PRESENT_ROLE_THIS_SESSION) {
+      const [cl, fs] = await Promise.all([
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/canvaLink/${topicId}.json`).then(r => r.json()),
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/s5/finalScript/${topicId}.json`).then(r => r.json()),
+      ]);
+      canvaLink = cl || null;
+      finalScript = fs || null;
+    } else {
+      const { order } = await computeGroupOrder(mine.ban);
+      const myIndex = order.indexOf(topicId);
+      const targetIdxs = myIndex === -1 ? [] : listenOrder(myIndex, order.length);
+      const targetTopicIds = targetIdxs.map(i => order[i]);
+      const [posts, titleAll, allFinal, allPref, perMemberAll, perGroupAll] = await Promise.all([
+        fetch(`${s1base}/posts.json`).then(r => r.json()),
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/s2/title.json`).then(r => r.json()),
+        fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+        fetch(`${s1base}/preferences.json`).then(r => r.json()),
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perMember.json`).then(r => r.json()),
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perGroup.json`).then(r => r.json()),
+      ]);
+      const ps = posts || {}, tt = titleAll || {}, fa = allFinal || {}, pa = allPref || {};
+      const pm = perMemberAll || {}, pg = perGroupAll || {};
+      targets = targetTopicIds.map(function(tid) {
+        const members = Object.entries(fa)
+          .filter(([, g]) => g.topicId === tid)
+          .map(([sid]) => ({ studentId: sid, num: (pa[sid] || {}).num, name: (pa[sid] || {}).name || sid }))
+          .sort((a, b) => (a.num || 0) - (b.num || 0));
+        return { topicId: tid, post: ps[tid] || {}, title: tt[tid] || null, members, perMember: pm[tid] || {}, perGroup: pg[tid] || {} };
+      });
+    }
+
+    await loadWrapup();
+    render();
+    setInterval(loadWrapup, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

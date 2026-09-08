@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>발표차시 정하기 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.role-options { display: flex; flex-direction: column; gap: 10px; }
+.role-btn {
+  text-align: left; border: 2px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface);
+  cursor: pointer; font-family: inherit;
+}
+.role-btn.selected { border-color: var(--accent); background: var(--accent-soft); }
+.role-btn .role-name { font-size: 0.95rem; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+.role-btn.selected .role-name { color: var(--accent); }
+.role-btn .role-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+.role-btn .role-desc b { color: var(--text); }
+
+.role-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.role-row:last-child { border-bottom: none; }
+.role-row .role-tag { font-size: 0.76rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--bg); color: var(--text-muted); }
+.role-row .role-tag.set { background: #dcf5e3; color: #1a5c2e; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🙋 발표차시 정하기</h1>
+    <p>6차시(1차발표)·7차시(2차발표)에서 우리 모둠 안에서 누가 언제 발표하고 언제 다른 모둠을 돌며 청취할지 정한다. 한 번 정하면 6·7차시 모두에 적용되고(두 차시에서 역할이 서로 바뀜), 6차시 전까지는 언제든 바꿀 수 있다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let base = null;
+let topicId = null;
+let groupmates = [];
+let roles = {}; // { [studentId]: { role, updatedAt } }
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadRoles() {
+  const r = await fetch(`${base}/${topicId}.json`).then(r => r.json());
+  roles = r || {};
+  render();
+}
+
+window.chooseRole = async function(role) {
+  const payload = { role, updatedAt: Date.now() };
+  await fetch(`${base}/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  roles[student.id] = payload;
+  render();
+};
+
+const ROLE_LABELS = { p1: '1차 발표자', p2: '2차 발표자' };
+
+function render() {
+  const mine = roles[student.id];
+  const html = `
+    <div class="group-card">
+      <h2>내 역할 선택</h2>
+      <div class="role-options">
+        <button class="role-btn ${mine && mine.role === 'p1' ? 'selected' : ''}" onclick="chooseRole('p1')">
+          <div class="role-name">1차 발표자</div>
+          <div class="role-desc"><b>6차시</b>: 모둠에 남아 우리 모둠 발표를 진행해요.<br><b>7차시</b>: 다른 모둠을 순서대로 돌며 발표를 듣고 동료평가를 작성해요.</div>
+        </button>
+        <button class="role-btn ${mine && mine.role === 'p2' ? 'selected' : ''}" onclick="chooseRole('p2')">
+          <div class="role-name">2차 발표자</div>
+          <div class="role-desc"><b>6차시</b>: 다른 모둠을 순서대로 돌며 발표를 듣고 동료평가를 작성해요.<br><b>7차시</b>: 모둠에 남아 우리 모둠 발표를 진행해요.</div>
+        </button>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <h2>모둠원별 선택 현황</h2>
+      ${groupmates.map(function(m) {
+        const r = roles[m.studentId];
+        const label = r ? ROLE_LABELS[r.role] : '아직 선택 안 함';
+        return `<div class="role-row"><span>${esc(m.num)}번 ${esc(m.name)}${m.studentId === student.id ? ' (나)' : ''}</span><span class="role-tag ${r ? 'set' : ''}">${esc(label)}</span></div>`;
+      }).join('')}
+    </div>
+  `;
+  document.getElementById('content').innerHTML = html;
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    base = `${DB_URL}/years/${YEAR}/exhibition/presentRole`;
+    const s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = mine.topicId;
+
+    const [finalAllRes, prefAllRes] = await Promise.all([
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+    ]);
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+    await loadRoles();
+    setInterval(loadRoles, 8000);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

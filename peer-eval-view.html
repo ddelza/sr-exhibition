@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>동료평가 열람하기 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.eval-item { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.eval-item .eval-meta { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
+.eval-item .eval-meta .sess-tag { font-weight: 700; color: var(--accent); }
+.eval-item .eval-text { font-size: 0.86rem; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+.eval-item .eval-label { font-size: 0.76rem; font-weight: 700; color: var(--text-muted); margin: 6px 0 2px; }
+.eval-item .eval-label:first-of-type { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📬 동료평가 열람하기</h1>
+    <p>6·7차시 전람회 발표 때 다른 모둠 친구들이 남겨준 동료평가를 모아 볼 수 있다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+function mineList(entries) {
+  return entries
+    .filter(function(x) { return x.data; })
+    .sort(function(a, b) { return (a.data.updatedAt || 0) - (b.data.updatedAt || 0); });
+}
+
+function personalCard(entries) {
+  const rows = mineList(entries).map(function(x) {
+    return `<div class="eval-item">
+      <div class="eval-meta"><span class="sess-tag">${x.sess}차시</span> · ${esc(x.data.evaluatorName)}님이 작성</div>
+      <div class="eval-text">${esc(x.data.text) || '(내용 없음)'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="group-card">
+    <h2>① 나에게 들어온 동료평가</h2>
+    <p class="hint" style="margin-top:-4px">내가 설명한 내용(또는 부분)과 잘한 점·아쉬운 점에 대해 청중이 남긴 평가</p>
+    ${rows || '<div class="empty-state">아직 들어온 동료평가가 없습니다.</div>'}
+  </div>`;
+}
+
+function groupCard(entries) {
+  const rows = mineList(entries).map(function(x) {
+    return `<div class="eval-item">
+      <div class="eval-meta"><span class="sess-tag">${x.sess}차시</span> · ${esc(x.data.evaluatorName)}님이 작성</div>
+      <div class="eval-label">특히 인상깊었던 장면</div>
+      <div class="eval-text">${esc(x.data.scene) || '(내용 없음)'}</div>
+      <div class="eval-label">알게 된 점</div>
+      <div class="eval-text">${esc(x.data.learned) || '(내용 없음)'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="group-card">
+    <h2>② 우리 모둠에 들어온 동료평가</h2>
+    <p class="hint" style="margin-top:-4px">발표에서 인상깊었던 장면, 청중이 알게 된 점</p>
+    ${rows || '<div class="empty-state">아직 들어온 동료평가가 없습니다.</div>'}
+  </div>`;
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    const YEAR = await loadYear();
+    const s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    const base = `${DB_URL}/years/${YEAR}/exhibition/peerEval`;
+
+    const mine = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    const topicId = mine.topicId;
+
+    const [pm6, pm7, pg6, pg7] = await Promise.all([
+      fetch(`${base}/6/perMember/${topicId}/${student.id}.json`).then(r => r.json()),
+      fetch(`${base}/7/perMember/${topicId}/${student.id}.json`).then(r => r.json()),
+      fetch(`${base}/6/perGroup/${topicId}.json`).then(r => r.json()),
+      fetch(`${base}/7/perGroup/${topicId}.json`).then(r => r.json()),
+    ]);
+
+    const personalEntries = []
+      .concat(Object.values(pm6 || {}).map(function(d) { return { sess: 6, data: d }; }))
+      .concat(Object.values(pm7 || {}).map(function(d) { return { sess: 7, data: d }; }));
+    const groupEntries = []
+      .concat(Object.values(pg6 || {}).map(function(d) { return { sess: 6, data: d }; }))
+      .concat(Object.values(pg7 || {}).map(function(d) { return { sess: 7, data: d }; }));
+
+    document.getElementById('content').innerHTML = personalCard(personalEntries) + groupCard(groupEntries);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
