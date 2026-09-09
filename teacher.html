@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전람회 채점 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 720px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.card h2 { font-size: 0.95rem; margin: 0 0 10px; }
+
+.mode-row { display: flex; gap: 10px; }
+.mode-btn {
+  flex: 1; text-align: center; border: 2px solid var(--border); border-radius: 12px; padding: 14px 10px;
+  background: var(--surface); cursor: pointer; font-family: inherit; font-size: 0.88rem; font-weight: 700; color: var(--text);
+}
+.mode-btn.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+.group-pick { display: flex; flex-direction: column; gap: 8px; }
+.group-pick-btn {
+  text-align: left; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface);
+  cursor: pointer; font-family: inherit; font-size: 0.85rem;
+}
+.group-pick-btn:hover { border-color: var(--accent); }
+.group-pick-btn .gp-title { font-weight: 700; }
+.group-pick-btn .gp-members { font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
+
+.nav-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.nav-bar button {
+  padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.nav-bar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.nav-bar button:disabled { opacity: 0.4; cursor: default; }
+.nav-progress { font-size: 0.78rem; color: var(--text-muted); text-align: center; flex: 1; }
+
+.student-banner { background: var(--accent-soft); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; }
+.student-banner .sb-name { font-size: 1.05rem; font-weight: 800; color: var(--accent); }
+.student-banner .sb-group { font-size: 0.8rem; color: var(--text); margin-top: 2px; }
+.student-banner .sb-group b { color: var(--accent); }
+
+.total-bar { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.88rem; font-weight: 700; }
+.total-bar .total-score { color: var(--accent); font-size: 1.1rem; }
+
+.crit-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.crit-card .crit-group { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); margin-bottom: 2px; }
+.crit-card h3 { font-size: 0.94rem; margin: 0 0 4px; }
+.crit-card .crit-range { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 10px; }
+.score-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.score-btn {
+  min-width: 40px; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface);
+  cursor: pointer; font-family: inherit; font-size: 0.88rem; font-weight: 700; color: var(--text);
+}
+.score-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.crit-content { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.84rem; line-height: 1.55; color: var(--text); }
+.crit-content .cc-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin: 6px 0 2px; }
+.crit-content .cc-label:first-child { margin-top: 0; }
+.crit-content .cc-empty { color: var(--text-muted); }
+.crit-content .no-content { color: var(--text-muted); font-style: normal; }
+.block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 4px; }
+.block-table th, .block-table td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+.copy-group-row { text-align: right; margin-top: -4px; margin-bottom: 12px; }
+.copy-group-row button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 0.74rem; color: var(--text-muted); cursor: pointer; }
+.copy-group-row button:hover { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>✅ 전람회 채점</h1>
+    <p>자극과 반응 전람회 수행평가(25점) — 학생별 또는 평가요소별로 편하게 채점하세요.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>전람회 채점</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a></div>
+    </div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div class="card">
+      <h2>채점 모드</h2>
+      <div class="mode-row">
+        <button class="mode-btn" id="modeStudentBtn" onclick="chooseMode('student')">👤 학생별 채점<br><span style="font-weight:400;font-size:0.78rem">한 학생의 모든 항목을 채점하고 다음 학생으로</span></button>
+        <button class="mode-btn" id="modeCritBtn" onclick="chooseMode('criterion')">📋 평가요소별 채점<br><span style="font-weight:400;font-size:0.78rem">항목 하나를 고정하고 학생만 넘기며 채점</span></button>
+      </div>
+    </div>
+
+    <div id="critPickWrap" style="display:none" class="card">
+      <h2>채점할 평가요소 선택</h2>
+      <select id="critSelect" onchange="onCritChange()"></select>
+    </div>
+
+    <div id="groupPickWrap" class="card" style="display:none">
+      <h2>시작할 모둠 선택 <span style="font-size:0.76rem;color:var(--text-muted);font-weight:400">(고르면 그 모둠 1번째 학생부터 시작, 이후 자동으로 다음 모둠·다음 반까지 이어집니다)</span></h2>
+      <div class="group-pick" id="groupPick"></div>
+    </div>
+
+    <div id="graderWrap" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3;
+let YEAR = null;
+let finalGroups = {}, posts = {}, preferences = {}, roster = {};
+let s2Title = {}, s2Items = {}, s3Blocks = {}, s3Summary = {}, s8Reflection = {};
+let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {};
+let gradingAll = {}; // topicId -> studentId -> {q_*, updatedAt}
+let selectedBan = '';
+let mode = null; // 'student' | 'criterion'
+let selectedCrit = null;
+let flatList = []; // [{topicId, studentId}] ordered by group then student num, for selectedBan
+let ptr = -1;
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+// ── 평가요소 정의 (2026-2학기 평가계획, 전람회 25점) ─────────────────────
+// ⚠ 원본 hwp 표의 "탐구 설계하기"·"탐구 결과 분석하기"·"탐구 부스 운영하기"·
+// "동료에게 비판적 질문하기" 항목은 OCR 변환 중 셀이 뒤섞여 최하점 단계가 일부
+// 안 보인다(1점부터만 확인됨). 안전하게 0점부터 선택 가능하게 열어두되, 정확한
+// 하위 배점 문구는 원본 hwp 재확인 권장.
+const CRITERIA = [
+  { key: 'q_question', label: '① 질문 만들기', max: 2, min: 0, group: '탐구 설계하기 (6점)', scope: 'group', content: c => contentQuestion(c) },
+  { key: 'q_hypo', label: '② 가설·변인 연결하기', max: 2, min: 0, group: '탐구 설계하기 (6점)', scope: 'group', content: c => contentHypo(c) },
+  { key: 'q_procedure', label: '③ 탐구 절차 설계하기', max: 2, min: 0, group: '탐구 설계하기 (6점)', scope: 'group', content: c => contentProcedure(c) },
+  { key: 'q_result', label: '④ 결과 해석 및 결론 도출하기', max: 3, min: 0, note: '(원본상 1~3점만 확인됨)', group: '탐구 결과 분석하기 (3점)', scope: 'group', content: c => contentResult(c) },
+  { key: 'q_display', label: '⑤ 전시물 구성하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '탐구 부스 운영하기 (4점)', scope: 'group', content: c => contentDisplay(c) },
+  { key: 'q_qa', label: '⑥ 질의응답하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '탐구 부스 운영하기 (4점)', scope: 'group', content: c => '<div class="no-content">디지털 기록 없음 — 전시 당일 관객 질의응답 대응을 직접 관찰한 기록을 참고하세요.</div>' },
+  { key: 'q_reflect1', label: '⑦ 지식 내재화하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q1a', 'q1b']) },
+  { key: 'q_reflect2', label: '⑧ 탐구 과정 및 논리 점검하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q2a', 'q2b', 'q2c', 'q2d', 'q2e', 'q2f']) },
+  { key: 'q_reflect3', label: '⑨ 과학적 소양 및 삶과 연결하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q3a', 'q3b']) },
+  { key: 'q_peer', label: '⑩ 동료에게 비판적 질문하기', max: 4, min: 0, note: '(원본상 1~4점만 확인됨, 체험 부스 수 기준)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => contentPeer(c) },
+  { key: 'q_concept', label: '⑪ 핵심 개념 구조화하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => '<div class="no-content">별도 페이지 예정 — 아직 디지털 제출 기록이 없습니다.</div>' },
+];
+const CRIT_MAX_TOTAL = CRITERIA.reduce((s, c) => s + c.max, 0);
+
+const REFLECT_Q_LABELS = {
+  q1a: '과학적 원리(원인-결과)', q1b: '나만의 언어로 설명',
+  q2a: '처음 질문', q2b: '가설과 이유', q2c: '실험 계획', q2d: '문제·어려움', q2e: '해결 방법', q2f: '전시 반응',
+  q3a: '나의 참여 태도', q3b: '건강·진로·사회 연결 + 실천',
+};
+const BLOCK_LABELS = { photo: '📷 사진', graph: '📈 그래프', resultsTable: '🧪 실험 결과표', freeTable: '▦ 자유 표', link: '🔗 링크', text: '📝 텍스트' };
+const S2_FIELD_LABELS = [['materials', '준비물'], ['measurement', '변인측정방법'], ['controlledVars', '통제변인'], ['steps', '실험과정'], ['precautions', '유의사항']];
+
+function groupTitleOf(topicId) {
+  const t = s2Title[topicId];
+  return (t && t.text) || (posts[topicId] && posts[topicId].question) || topicId;
+}
+
+function contentQuestion(c) {
+  return `<div>${esc((c.post || {}).question) || '<span class="cc-empty">(작성 없음)</span>'}</div>`;
+}
+function contentHypo(c) {
+  const p = c.post || {};
+  if (!p.hypothesis && !p.iv && !p.dv) return '<span class="cc-empty">(작성 없음)</span>';
+  return `<div><b>독립변인</b> ${esc(p.iv)} · <b>종속변인</b> ${esc(p.dv)}<br>${esc(p.hypothesis)}</div>`;
+}
+function contentProcedure(c) {
+  const items = s2Items[c.topicId] || {};
+  const parts = S2_FIELD_LABELS.map(function([key, label]) {
+    const list = Object.values(items[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (!list.length) return '';
+    return `<div class="cc-label">${label}</div>` + list.map(it => esc(it.text)).join(', ');
+  }).filter(Boolean).join('');
+  return parts || '<span class="cc-empty">(작성 없음)</span>';
+}
+function contentResult(c) {
+  const summary = s3Summary[c.topicId] || {};
+  const parts = [['actualResult', '실제 실험 결과'], ['conclusion', '결론 정리']].map(function([key, label]) {
+    const list = Object.values(summary[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (!list.length) return '';
+    return `<div class="cc-label">${label}</div>` + list.map(it => esc(it.text)).join('<br>');
+  }).filter(Boolean).join('');
+  return parts || '<span class="cc-empty">(작성 없음)</span>';
+}
+function contentDisplay(c) {
+  const blocks = s3Blocks[c.topicId] || {};
+  const sorted = Object.values(blocks).sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (!sorted.length) return '<span class="cc-empty">(작성 없음)</span>';
+  return sorted.map(function(b) {
+    const label = BLOCK_LABELS[b.type] || b.type;
+    const title = b.title ? ` — ${esc(b.title)}` : '';
+    let extra = '';
+    if (b.type === 'text') extra = `: ${esc((b.content || '').slice(0, 60))}`;
+    if (b.type === 'link') extra = `: ${esc(b.description || b.url || '')}`;
+    return `<div>${label}${title}${extra}</div>`;
+  }).join('');
+}
+function contentReflect(c, keys) {
+  const r = s8Reflection[c.topicId] && s8Reflection[c.topicId][c.studentId];
+  if (!r) return '<span class="cc-empty">(작성 없음)</span>';
+  return keys.map(function(k) {
+    const val = r[k];
+    return `<div class="cc-label">${REFLECT_Q_LABELS[k]}</div>${val ? esc(val) : '<span class="cc-empty">(작성 안 함)</span>'}`;
+  }).join('');
+}
+function contentPeer(c) {
+  const targets = new Set();
+  [peerGroup6, peerGroup7].forEach(function(pg) {
+    Object.entries(pg).forEach(function([targetTopicId, byEval]) {
+      if ((byEval || {})[c.studentId]) targets.add(groupTitleOf(targetTopicId));
+    });
+  });
+  if (!targets.size) return '<span class="cc-empty">(평가 남긴 모둠 없음)</span>';
+  return `<div>${targets.size}개 모둠에 동료평가 남김: ${[...targets].map(esc).join(', ')}</div>`;
+}
+
+function memberLabel(studentId) {
+  const p = preferences[studentId];
+  if (p) return `${esc(p.num)}번 ${esc(p.name)}`;
+  const r = roster[studentId];
+  if (r) return `${esc(r.num)}번 ${esc(r.name)} (지망 미신청)`;
+  return esc(studentId);
+}
+
+async function loadAll() {
+  const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
+  const s3 = `${DB_URL}/years/${YEAR}/exhibition/s3`;
+  const [fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, gr] = await Promise.all([
+    fetch(`${s1}/finalGroups.json`).then(r => r.json()),
+    fetch(`${s1}/posts.json`).then(r => r.json()),
+    fetch(`${s1}/preferences.json`).then(r => r.json()),
+    fetch(`${s2}/title.json`).then(r => r.json()),
+    fetch(`${s2}/items.json`).then(r => r.json()),
+    fetch(`${s3}/blocks.json`).then(r => r.json()),
+    fetch(`${s3}/summary.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s8/reflection.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/presentRole.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/6/perGroup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/7/perGroup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/grading.json`).then(r => r.json()),
+  ]);
+  finalGroups = fg || {};
+  posts = p || {};
+  preferences = pref || {};
+  s2Title = tt || {};
+  s2Items = it || {};
+  s3Blocks = bl || {};
+  s3Summary = sm || {};
+  s8Reflection = rf || {};
+  presentRoleAll = pr || {};
+  peerGroup6 = pg6 || {};
+  peerGroup7 = pg7 || {};
+  gradingAll = gr || {};
+}
+
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(finalGroups).map(g => String(g.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 모둠이 배정된 반이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+function buildFlatList() {
+  const groups = {}; // topicId -> [studentId,...]
+  Object.entries(finalGroups).forEach(([sid, g]) => {
+    if (String(g.ban) !== selectedBan) return;
+    (groups[g.topicId] = groups[g.topicId] || []).push(sid);
+  });
+  const topicIds = Object.keys(groups).sort((a, b) => ((posts[a] || {}).ts || 0) - ((posts[b] || {}).ts || 0));
+  topicIds.forEach(function(tid) {
+    groups[tid].sort((a, b) => ((preferences[a] || {}).num || 0) - ((preferences[b] || {}).num || 0));
+  });
+  flatList = [];
+  topicIds.forEach(function(tid) {
+    groups[tid].forEach(function(sid) { flatList.push({ topicId: tid, studentId: sid }); });
+  });
+  return topicIds.map(tid => ({ topicId: tid, members: groups[tid] }));
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  ptr = -1;
+  document.getElementById('graderWrap').style.display = 'none';
+  renderGroupPick();
+};
+
+window.chooseMode = function(m) {
+  mode = m;
+  document.getElementById('modeStudentBtn').classList.toggle('selected', m === 'student');
+  document.getElementById('modeCritBtn').classList.toggle('selected', m === 'criterion');
+  document.getElementById('critPickWrap').style.display = m === 'criterion' ? 'block' : 'none';
+  if (m === 'criterion' && !selectedCrit) selectedCrit = CRITERIA[0].key;
+  renderGroupPick();
+};
+
+window.onCritChange = function() {
+  selectedCrit = document.getElementById('critSelect').value;
+  if (ptr >= 0) renderGrader();
+};
+
+function renderGroupPick() {
+  const groupsInBan = buildFlatList();
+  const wrap = document.getElementById('groupPickWrap');
+  const listEl = document.getElementById('groupPick');
+  if (!mode || !selectedBan) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  listEl.innerHTML = groupsInBan.map(function(g) {
+    const title = groupTitleOf(g.topicId);
+    return `<button class="group-pick-btn" onclick="startAt('${g.topicId}')">
+      <div class="gp-title">${esc(title)}</div>
+      <div class="gp-members">${g.members.map(memberLabel).join(', ')}</div>
+    </button>`;
+  }).join('') || '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+}
+
+window.startAt = function(topicId) {
+  const idx = flatList.findIndex(x => x.topicId === topicId);
+  ptr = idx === -1 ? 0 : idx;
+  document.getElementById('graderWrap').style.display = 'block';
+  renderGrader();
+};
+
+window.goNext = async function() {
+  if (ptr >= flatList.length - 1) { alert('이 반의 마지막 학생입니다. 다른 반을 선택해 이어서 채점하세요.'); return; }
+  const prev = flatList[ptr];
+  ptr++;
+  const next = flatList[ptr];
+  if (next.topicId === prev.topicId) {
+    // 같은 모둠으로 넘어갈 때는, 모둠 공통 항목(scope:'group')을 이전 학생과 같은 점수로
+    // 미리 채워둔다 — 내용이 같은 모둠 항목을 매번 다시 클릭하지 않아도 되게 하기 위함.
+    // 이미 그 학생에게 입력된 값이 있으면 덮어쓰지 않는다.
+    const prevRec = (gradingAll[prev.topicId] || {})[prev.studentId] || {};
+    const nextRec = (gradingAll[next.topicId] || {})[next.studentId] || {};
+    const writes = [];
+    CRITERIA.forEach(function(c) {
+      if (c.scope === 'group' && prevRec[c.key] !== undefined && nextRec[c.key] === undefined) {
+        writes.push(saveScore(next.topicId, next.studentId, c.key, prevRec[c.key]));
+      }
+    });
+    await Promise.all(writes);
+  }
+  renderGrader();
+};
+window.goPrev = function() {
+  if (ptr > 0) { ptr--; renderGrader(); }
+};
+
+async function saveScore(topicId, studentId, key, value) {
+  gradingAll[topicId] = gradingAll[topicId] || {};
+  gradingAll[topicId][studentId] = gradingAll[topicId][studentId] || {};
+  gradingAll[topicId][studentId][key] = value;
+  gradingAll[topicId][studentId].updatedAt = Date.now();
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}.json`, {
+    method: 'PATCH', body: JSON.stringify({ [key]: value, updatedAt: Date.now() }),
+  });
+}
+
+window.pickScore = function(topicId, studentId, key, value) {
+  saveScore(topicId, studentId, key, value);
+  const row = document.getElementById('scorerow-' + key);
+  if (row) {
+    row.querySelectorAll('.score-btn').forEach(function(btn) {
+      btn.classList.toggle('selected', Number(btn.dataset.val) === value);
+    });
+  }
+  updateTotalDisplay(topicId, studentId);
+};
+
+window.copyToGroup = async function(topicId, key, value) {
+  const members = flatList.filter(x => x.topicId === topicId).map(x => x.studentId);
+  await Promise.all(members.map(sid => saveScore(topicId, sid, key, value)));
+  alert(`이 항목 점수(${value}점)를 모둠원 ${members.length}명 전체에 적용했습니다.`);
+  renderGrader();
+};
+
+function updateTotalDisplay(topicId, studentId) {
+  const el = document.getElementById('totalScoreVal');
+  if (!el) return;
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
+  const sum = CRITERIA.reduce((s, c) => s + (Number(rec[c.key]) || 0), 0);
+  el.textContent = `${sum} / ${CRIT_MAX_TOTAL}`;
+}
+
+function scoreRowHtml(topicId, studentId, crit) {
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
+  const current = rec[crit.key];
+  const btns = [];
+  for (let v = crit.min; v <= crit.max; v++) {
+    btns.push(`<button class="score-btn${current === v ? ' selected' : ''}" data-val="${v}" onclick="pickScore('${topicId}','${studentId}','${crit.key}',${v})">${v}</button>`);
+  }
+  return `<div class="score-row" id="scorerow-${crit.key}">${btns.join('')}</div>`;
+}
+
+function critCardHtml(topicId, studentId, crit) {
+  const ctx = { topicId, studentId, post: posts[topicId] || {} };
+  return `<div class="crit-card">
+    <div class="crit-group">${esc(crit.group)}</div>
+    <h3>${esc(crit.label)}</h3>
+    <div class="crit-range">배점: 0~${crit.max}점${crit.note ? ' ' + esc(crit.note) : ''}</div>
+    ${scoreRowHtml(topicId, studentId, crit)}
+    <div class="crit-content">${crit.content(ctx)}</div>
+    ${crit.scope === 'group' ? `<div class="copy-group-row"><button onclick="copyGroupPrompt('${topicId}','${studentId}','${crit.key}')">이 점수를 모둠 전체에 복사</button></div>` : ''}
+  </div>`;
+}
+
+window.copyGroupPrompt = function(topicId, studentId, key) {
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
+  const value = rec[key];
+  if (value === undefined || value === null) { alert('먼저 이 학생의 점수를 선택해주세요.'); return; }
+  if (!confirm(`이 항목 점수(${value}점)를 이 모둠 전체 학생에게 똑같이 적용할까요?`)) return;
+  copyToGroup(topicId, key, value);
+};
+
+function renderGrader() {
+  if (ptr < 0 || ptr >= flatList.length) return;
+  const cur = flatList[ptr];
+  const groupMembers = flatList.filter(x => x.topicId === cur.topicId).map(x => x.studentId);
+  const idxInGroup = groupMembers.indexOf(cur.studentId);
+  const title = groupTitleOf(cur.topicId);
+
+  let critsHtml, totalHtml = '';
+  if (mode === 'student') {
+    critsHtml = CRITERIA.map(c => critCardHtml(cur.topicId, cur.studentId, c)).join('');
+    const rec = (gradingAll[cur.topicId] || {})[cur.studentId] || {};
+    const sum = CRITERIA.reduce((s, c) => s + (Number(rec[c.key]) || 0), 0);
+    totalHtml = `<div class="total-bar"><span>현재 합계</span><span class="total-score" id="totalScoreVal">${sum} / ${CRIT_MAX_TOTAL}</span></div>`;
+  } else {
+    const crit = CRITERIA.find(c => c.key === selectedCrit);
+    critsHtml = critCardHtml(cur.topicId, cur.studentId, crit);
+  }
+
+  document.getElementById('graderWrap').innerHTML = `
+    <div class="nav-bar">
+      <button onclick="goPrev()" ${ptr === 0 ? 'disabled' : ''}>◀ 이전 학생</button>
+      <div class="nav-progress">${esc(selectedBan)}반 · 전체 ${ptr + 1}/${flatList.length}명 (모둠 내 ${idxInGroup + 1}/${groupMembers.length}번째)</div>
+      <button class="primary" onclick="goNext()">다음 학생 ▶</button>
+    </div>
+    <div class="student-banner">
+      <div class="sb-name">${memberLabel(cur.studentId)}</div>
+      <div class="sb-group"><b>${esc(title)}</b> · 모둠원: ${groupMembers.map(memberLabel).join(', ')}</div>
+    </div>
+    ${totalHtml}
+    ${critsHtml}
+    <div class="nav-bar" style="margin-top:4px">
+      <button onclick="goPrev()" ${ptr === 0 ? 'disabled' : ''}>◀ 이전 학생</button>
+      <div class="nav-progress"></div>
+      <button class="primary" onclick="goNext()">다음 학생 ▶</button>
+    </div>
+  `;
+
+  const critSelect = document.getElementById('critSelect');
+  if (critSelect && !critSelect.dataset.filled) {
+    critSelect.innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} (${esc(c.group)})</option>`).join('');
+    critSelect.value = selectedCrit;
+    critSelect.dataset.filled = '1';
+  }
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadRoster();
+    await loadAll();
+    renderBanSelect();
+    document.getElementById('critSelect').innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} (${esc(c.group)})</option>`).join('');
+    document.getElementById('critSelect').dataset.filled = '1';
+  } catch (e) {
+    document.getElementById('groupPick').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
