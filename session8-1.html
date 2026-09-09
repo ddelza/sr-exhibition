@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8차시 · 성찰일지 작성하기 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.rubric-card h2 .rubric-pts { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin-left: 6px; }
+.sub-q { margin-bottom: 14px; }
+.sub-q:last-child { margin-bottom: 0; }
+.sub-q label { font-size: 0.86rem; font-weight: 600; color: var(--text); display: block; margin-bottom: 6px; line-height: 1.5; }
+.sub-q textarea {
+  width: 100%; padding: 9px 11px; font-size: 0.88rem; line-height: 1.55; font-family: inherit; resize: vertical; min-height: 64px;
+}
+
+.save-bar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 12px 0; margin-top: 4px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.save-bar button {
+  padding: 10px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.9rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.save-bar .save-status { font-size: 0.78rem; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📔 8차시 · 성찰일지 작성하기</h1>
+    <p>전람회 탐구·전시를 되돌아보며 나의 성찰일지를 작성한다. 모둠원이 아닌 나 혼자 쓰는 개인 기록이다.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let YEAR = null;
+let base = null;
+let topicId = null;
+let post = {};
+let groupmates = [];
+let mine = {}; // 저장된 값
+let saveTimer = null;
+const AUTOSAVE_IDLE_MS = 3000;
+
+const FIELDS = [
+  { key: 'q1a', group: 1 }, { key: 'q1b', group: 1 },
+  { key: 'q2a', group: 2 }, { key: 'q2b', group: 2 }, { key: 'q2c', group: 2 },
+  { key: 'q2d', group: 2 }, { key: 'q2e', group: 2 }, { key: 'q2f', group: 2 },
+  { key: 'q3a', group: 3 }, { key: 'q3b', group: 3 },
+];
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+function subQ(key, label) {
+  return `<div class="sub-q">
+    <label>${label}</label>
+    <textarea id="f-${key}" data-key="${key}">${esc(mine[key] || '')}</textarea>
+  </div>`;
+}
+
+function renderForm() {
+  const html = `
+    <div class="group-card">
+      <h2>${esc(post.question || '')}</h2>
+      <div class="post-hypo">
+        <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+        ${esc(post.hypothesis)}
+      </div>
+      <div class="member-list">모둠원: ${groupmates.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+    </div>
+
+    <div class="group-card rubric-card">
+      <h2>① 지식 내재화하기<span class="rubric-pts">(2점)</span></h2>
+      ${subQ('q1a', '우리 탐구 결과, 왜 그런 현상이 일어나는지 설명해주는 과학적 원리(원인-결과 관계)는 무엇인가?')}
+      ${subQ('q1b', '그 원리를 과학을 잘 모르는 친구나 동생에게 설명해준다면, 어떻게 쉽게 풀어서 이야기해줄 수 있을까? (교과서 문장이 아니라 나만의 표현으로)')}
+    </div>
+
+    <div class="group-card rubric-card">
+      <h2>② 탐구 과정 및 논리 점검하기<span class="rubric-pts">(2점)</span></h2>
+      ${subQ('q2a', '처음에 어떤 질문(궁금증)에서 이 탐구를 시작했나?')}
+      ${subQ('q2b', '그 질문에 대해 왜 그런 결과가 나올 거라고 생각했나? (가설과 그 이유)')}
+      ${subQ('q2c', '가설을 확인하기 위해 어떤 실험(탐구)을 계획했나?')}
+      ${subQ('q2d', '탐구 과정에서 어떤 문제나 어려움이 있었나?')}
+      ${subQ('q2e', '그 문제를 어떻게 해결했나?')}
+      ${subQ('q2f', '전시(전람회) 발표 때 무엇을 중심으로 설명했고, 어떤 반응(질문·피드백)을 받았나?')}
+    </div>
+
+    <div class="group-card rubric-card">
+      <h2>③ 과학적 소양 및 삶과 연결하기<span class="rubric-pts">(2점)</span></h2>
+      ${subQ('q3a', '이번 탐구·전시 과정에서 나는 어떤 태도로 참여했는지 스스로 평가해보자. (적극성, 협력, 책임감 등 — 잘한 점과 아쉬운 점)')}
+      ${subQ('q3b', '이번에 배운 과학 지식(감각기관·신경계·호르몬 등)이 나의 건강 관리, 미래(진로), 우리 사회 중 하나를 골라 어떻게 도움이 될 수 있을지 적고, 앞으로 실제로 해보고 싶은 실천 한 가지를 적어보자.')}
+    </div>
+
+    <div class="save-bar">
+      <span class="save-status" id="saveStatus">${mine.updatedAt ? '마지막 저장: 방금 전' : '아직 저장하지 않았습니다.'}</span>
+      <button onclick="saveAll()">저장</button>
+    </div>
+  `;
+  document.getElementById('content').innerHTML = html;
+
+  document.getElementById('content').addEventListener('input', function(e) {
+    if (e.target.tagName !== 'TEXTAREA') return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveAll, AUTOSAVE_IDLE_MS);
+  });
+}
+
+window.saveAll = async function() {
+  clearTimeout(saveTimer);
+  const payload = { updatedAt: Date.now() };
+  FIELDS.forEach(function(f) {
+    const el = document.getElementById('f-' + f.key);
+    payload[f.key] = el ? el.value.trim() : (mine[f.key] || '');
+  });
+  await fetch(`${base}/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  mine = payload;
+  const status = document.getElementById('saveStatus');
+  if (status) status.textContent = '✓ 저장됨 · 방금 전';
+};
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    YEAR = await loadYear();
+    base = `${DB_URL}/years/${YEAR}/exhibition/s8/reflection`;
+    const s1base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+
+    const myGroup = await fetch(`${s1base}/finalGroups/${student.id}.json`).then(r => r.json());
+    if (!myGroup) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    topicId = myGroup.topicId;
+
+    const [postRes, finalAllRes, prefAllRes, mineRes] = await Promise.all([
+      fetch(`${s1base}/posts/${topicId}.json`).then(r => r.json()),
+      fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1base}/preferences.json`).then(r => r.json()),
+      fetch(`${base}/${topicId}/${student.id}.json`).then(r => r.json()),
+    ]);
+    post = postRes || {};
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    groupmates = Object.entries(finalAll)
+      .filter(([, g]) => g.topicId === topicId)
+      .map(([sid]) => ({ studentId: sid, num: (prefAll[sid] || {}).num, name: (prefAll[sid] || {}).name || sid }))
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+    mine = mineRes || {};
+
+    renderForm();
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
