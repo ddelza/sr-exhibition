@@ -75,7 +75,13 @@ let targetsOpen = {};
 let canvaLink = null;
 let finalScript = null;
 let wrapup = {};
-let anyDirty = false; // 5차시에서 겪은 "포커스 이탈 후 폴링에 내용이 사라지는" 문제를 막기 위한 전역 가드
+// render()는 화면 전체를 다시 그리므로, 그 순간 열려 있던 카드에 저장 안 된 입력이 있으면
+// 통째로 사라진다(카드를 접거나, 다른 카드를 저장하거나, 8초 폴링이 오는 등 render()를
+// 부르는 모든 경우가 위험하다 — 실제로 학생 데이터가 이렇게 유실된 사례가 있었음). 그래서
+// render()가 화면을 새로 그리기 직전에 "지금 화면에 보이는 입력값"을 항상 먼저 이 초안
+// 캐시에 담아두고, 다시 그릴 때 저장된 값 대신 이 초안을 우선 사용한다.
+let targetDrafts = {};
+let wrapupDraft = null;
 
 function esc(str) {
   if (!str) return '';
@@ -109,7 +115,30 @@ function listenOrder(myIndex, total) {
   return out;
 }
 
+function captureOpenDrafts() {
+  targets.forEach(function(t) {
+    if (!targetsOpen[t.topicId]) return;
+    const memberTexts = {};
+    t.members.forEach(function(m) {
+      const el = document.getElementById('mf-' + t.topicId + '-' + m.studentId);
+      if (el) memberTexts[m.studentId] = el.value;
+    });
+    const sceneEl = document.getElementById('scene-' + t.topicId);
+    const learnedEl = document.getElementById('learned-' + t.topicId);
+    if (sceneEl || learnedEl || Object.keys(memberTexts).length) {
+      targetDrafts[t.topicId] = {
+        memberTexts,
+        scene: sceneEl ? sceneEl.value : '',
+        learned: learnedEl ? learnedEl.value : '',
+      };
+    }
+  });
+  const wrapupEl = document.getElementById('wrapupInput');
+  if (wrapupEl) wrapupDraft = wrapupEl.value;
+}
+
 window.toggleTarget = function(tid) {
+  captureOpenDrafts(); // 카드를 접기 전에, 지금 그 카드에 입력된 내용을 먼저 지켜둔다
   targetsOpen[tid] = !targetsOpen[tid];
   render();
 };
@@ -141,7 +170,7 @@ window.saveTargetEval = async function(tid) {
   }));
   t.perGroup[student.id] = groupPayload;
   await Promise.all(writes);
-  anyDirty = false;
+  delete targetDrafts[tid];
   const flash = document.getElementById('flash-' + tid);
   if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
 };
@@ -152,12 +181,13 @@ window.saveWrapup = async function() {
   const payload = { text, updatedAt: Date.now() };
   await fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup/${topicId}/${student.id}.json`, { method: 'PUT', body: JSON.stringify(payload) });
   wrapup[student.id] = payload;
-  anyDirty = false;
+  wrapupDraft = null;
   render();
 };
 
 function renderPresentBranch() {
   const mine = wrapup[student.id];
+  const val = wrapupDraft !== null ? wrapupDraft : (mine ? mine.text : '');
   return `<div class="role-banner present">🎤 오늘은 <b>발표자</b>입니다. 모둠 자리에 남아 우리 모둠 발표를 진행하세요.
     <div class="ref-links">
       ${canvaLink && canvaLink.url ? `<a href="${escAttr(canvaLink.url)}" target="_blank" rel="noopener">📽️ 발표자료 열기</a>` : ''}
@@ -168,7 +198,7 @@ function renderPresentBranch() {
     <h2>발표를 마친 후 — 성찰</h2>
     <p class="hint" style="margin-top:-4px">6차시에 1차 발표자가 남겨준 피드백을 이번 발표에서 어떻게 반영했는지, 어떤 부분이 성공적이었는지 되돌아보며 적어보자.</p>
     <div class="field-block">
-      <textarea id="wrapupInput" placeholder="피드백을 어떻게 반영했는지, 무엇이 성공적이었는지">${esc(mine ? mine.text : '')}</textarea>
+      <textarea id="wrapupInput" placeholder="피드백을 어떻게 반영했는지, 무엇이 성공적이었는지">${esc(val)}</textarea>
     </div>
     <div class="save-row"><button onclick="saveWrapup()">저장</button></div>
   </div>`;
@@ -176,6 +206,7 @@ function renderPresentBranch() {
 
 function targetCard(t, idx) {
   const isOpen = targetsOpen[t.topicId];
+  const draft = targetDrafts[t.topicId];
   const title = (t.title && t.title.text) || t.post.question || '(제목 미정)';
   return `<div class="target-card">
     <div class="target-order">${idx + 1}번째로 만날 모둠</div>
@@ -186,18 +217,20 @@ function targetCard(t, idx) {
       ${!t.members.length ? '<p class="hint" style="margin-top:-4px">이 모둠의 발표자 역할 선택 정보가 아직 없어 모둠원별 평가칸을 보여줄 수 없습니다. "발표차시 정하기"가 끝난 뒤 다시 확인해주세요.</p>' : ''}
       ${t.members.map(function(m) {
         const existing = (t.perMember[m.studentId] || {})[student.id];
+        const draftText = draft && Object.prototype.hasOwnProperty.call(draft.memberTexts, m.studentId) ? draft.memberTexts[m.studentId] : null;
+        const val = draftText !== null ? draftText : (existing ? existing.text : '');
         return `<div class="member-field">
           <label>${esc(m.num)}번 ${esc(m.name)} — 설명한 내용·잘한 점·아쉬운 점</label>
-          <textarea id="mf-${t.topicId}-${m.studentId}" placeholder="이 모둠원이 어떤 부분을 설명했는지, 잘한 점과 아쉬운 점을 적어보자">${esc(existing ? existing.text : '')}</textarea>
+          <textarea id="mf-${t.topicId}-${m.studentId}" placeholder="이 모둠원이 어떤 부분을 설명했는지, 잘한 점과 아쉬운 점을 적어보자">${esc(val)}</textarea>
         </div>`;
       }).join('')}
       <div class="field-block">
         <label>특히 인상깊었던 장면</label>
-        <textarea id="scene-${t.topicId}">${esc((t.perGroup[student.id] || {}).scene || '')}</textarea>
+        <textarea id="scene-${t.topicId}">${esc(draft && draft.scene !== undefined ? draft.scene : ((t.perGroup[student.id] || {}).scene || ''))}</textarea>
       </div>
       <div class="field-block">
         <label>알게 된 점 (핵심 내용·소감·궁금한 점)</label>
-        <textarea id="learned-${t.topicId}">${esc((t.perGroup[student.id] || {}).learned || '')}</textarea>
+        <textarea id="learned-${t.topicId}">${esc(draft && draft.learned !== undefined ? draft.learned : ((t.perGroup[student.id] || {}).learned || ''))}</textarea>
       </div>
       <div class="save-row"><button onclick="saveTargetEval('${t.topicId}')">저장</button></div>
       <div class="save-flash" id="flash-${t.topicId}"></div>
@@ -213,11 +246,11 @@ function renderListenBranch() {
 async function loadWrapup() {
   const w = await fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup/${topicId}.json`).then(r => r.json());
   wrapup = w || {};
-  if (anyDirty) return;
   render();
 }
 
 function render() {
+  captureOpenDrafts(); // 화면을 다시 그리기 전에 지금 입력 중인 내용부터 반드시 지켜둔다
   const html = `
     <div class="group-card">
       <h2>${esc(post.question || '')}</h2>
@@ -229,12 +262,21 @@ function render() {
     </div>
     ${myRole === PRESENT_ROLE_THIS_SESSION ? renderPresentBranch() : renderListenBranch()}
   `;
+  // 다시 그리는 동안 포커스가 날아가 커서 위치가 튀지 않도록 복원한다.
+  const active = document.activeElement;
+  const activeId = active && active.id;
+  const isTextarea = active && active.tagName === 'TEXTAREA';
+  const selStart = isTextarea ? active.selectionStart : null;
+  const selEnd = isTextarea ? active.selectionEnd : null;
   document.getElementById('content').innerHTML = html;
+  if (activeId) {
+    const el = document.getElementById(activeId);
+    if (el && isTextarea) {
+      if (typeof selStart === 'number') { try { el.setSelectionRange(selStart, selEnd); } catch (e) {} }
+      el.focus();
+    }
+  }
 }
-
-document.getElementById('content').addEventListener('input', function(e) {
-  if (e.target.tagName === 'TEXTAREA') anyDirty = true;
-});
 
 (async function init() {
   if (!student) return;
