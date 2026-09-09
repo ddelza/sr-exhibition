@@ -195,7 +195,7 @@ function targetCard(t, idx) {
     <div class="member-list" style="margin-bottom:10px">${t.members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ')}</div>
     <button class="expand-btn" onclick="toggleTarget('${t.topicId}')">${isOpen ? '▴ 접기' : '▾ 동료평가 작성하기'}</button>
     ${isOpen ? `
-      <p class="hint" style="margin-top:-4px">실제로 발표에 참여한 모둠원에 대해서만 작성해주세요.</p>
+      ${!t.members.length ? '<p class="hint" style="margin-top:-4px">이 모둠의 발표자 역할 선택 정보가 아직 없어 모둠원별 평가칸을 보여줄 수 없습니다. "발표차시 정하기"가 끝난 뒤 다시 확인해주세요.</p>' : ''}
       ${t.members.map(function(m) {
         const existing = (t.perMember[m.studentId] || {})[student.id];
         return `<div class="member-field">
@@ -313,19 +313,24 @@ document.getElementById('content').addEventListener('input', function(e) {
       const myIndex = order.indexOf(topicId);
       const targetIdxs = myIndex === -1 ? [] : listenOrder(myIndex, order.length);
       const targetTopicIds = targetIdxs.map(i => order[i]);
-      const [posts, titleAll, allFinal, allPref, perMemberAll, perGroupAll] = await Promise.all([
+      const [posts, titleAll, allFinal, allPref, perMemberAll, perGroupAll, allRoles] = await Promise.all([
         fetch(`${s1base}/posts.json`).then(r => r.json()),
         fetch(`${DB_URL}/years/${YEAR}/exhibition/s2/title.json`).then(r => r.json()),
         fetch(`${s1base}/finalGroups.json`).then(r => r.json()),
         fetch(`${s1base}/preferences.json`).then(r => r.json()),
         fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perMember.json`).then(r => r.json()),
         fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perGroup.json`).then(r => r.json()),
+        fetch(`${DB_URL}/years/${YEAR}/exhibition/presentRole.json`).then(r => r.json()),
       ]);
       const ps = posts || {}, tt = titleAll || {}, fa = allFinal || {}, pa = allPref || {};
       const pm = perMemberAll || {}, pg = perGroupAll || {};
+      const roles = allRoles || {};
       targets = targetTopicIds.map(function(tid) {
+        // 오늘(이번 차시) 실제로 발표하는 쪽만 보여준다 — 6차시엔 1차발표자, 7차시엔 2차발표자만
+        // 그 자리에 있으므로, 청취자가 만나지도 않은 쪽에 대해 평가칸을 채우지 않게 한다.
+        const roleMap = roles[tid] || {};
         const members = Object.entries(fa)
-          .filter(([, g]) => g.topicId === tid)
+          .filter(([sid, g]) => g.topicId === tid && (roleMap[sid] || {}).role === PRESENT_ROLE_THIS_SESSION)
           .map(([sid]) => ({ studentId: sid, num: (pa[sid] || {}).num, name: (pa[sid] || {}).name || sid }))
           .sort((a, b) => (a.num || 0) - (b.num || 0));
         return { topicId: tid, post: ps[tid] || {}, title: tt[tid] || null, members, perMember: pm[tid] || {}, perGroup: pg[tid] || {} };
