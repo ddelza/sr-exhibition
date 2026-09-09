@@ -44,6 +44,13 @@
 .wrap-item { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
 .wrap-item .wrap-name { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
 .wrap-item .wrap-text { font-size: 0.86rem; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+
+.saved-summary { margin-top: 12px; border-left: 4px solid var(--accent); background: var(--bg); border-radius: 0 10px 10px 0; padding: 10px 12px; }
+.saved-summary-label { font-size: 0.74rem; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.saved-summary-row { font-size: 0.82rem; line-height: 1.55; color: var(--text); margin-bottom: 4px; white-space: pre-wrap; }
+.saved-summary-row:last-child { margin-bottom: 0; }
+.saved-summary-row b { color: var(--text-muted); font-weight: 700; }
+.saved-summary-row.empty { color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -207,6 +214,24 @@ function renderPresentBranch() {
   ${wrapupCard()}`;
 }
 
+// 수정칸과 "저장된 값"이 같은 칸이면 학생이 "진짜 저장된 게 맞나" 불안해한다는 피드백이 있어서,
+// 저장 버튼 밑에 지금 서버에 실제로 저장돼 있는 값을 항상 별도 박스로 분명하게 보여준다.
+// (초안이 아니라 t.perMember/t.perGroup — 저장 성공 시에만 갱신되는 값을 기준으로 한다.)
+function targetSavedSummary(t) {
+  const rows = t.members.map(function(m) {
+    const saved = (t.perMember[m.studentId] || {})[student.id];
+    const text = saved && saved.text ? esc(saved.text) : '(저장된 내용 없음)';
+    return `<div class="saved-summary-row${saved && saved.text ? '' : ' empty'}"><b>${esc(m.num)}번 ${esc(m.name)}:</b> ${text}</div>`;
+  }).join('');
+  const savedGroup = t.perGroup[student.id] || {};
+  return `<div class="saved-summary">
+    <div class="saved-summary-label">💾 서버에 저장된 내용</div>
+    ${rows}
+    <div class="saved-summary-row${savedGroup.scene ? '' : ' empty'}"><b>인상깊은 장면:</b> ${esc(savedGroup.scene) || '(저장된 내용 없음)'}</div>
+    <div class="saved-summary-row${savedGroup.learned ? '' : ' empty'}"><b>알게 된 점:</b> ${esc(savedGroup.learned) || '(저장된 내용 없음)'}</div>
+  </div>`;
+}
+
 function wrapupCard() {
   const mine = wrapup[student.id];
   const val = wrapupDraft !== null ? wrapupDraft : (mine ? mine.text : '');
@@ -218,6 +243,10 @@ function wrapupCard() {
         <textarea id="wrapupInput" placeholder="2차 발표자에게 남기고 싶은 피드백">${esc(val)}</textarea>
       </div>
       <div class="save-row"><button onclick="saveWrapup()">저장</button></div>
+      <div class="saved-summary">
+        <div class="saved-summary-label">💾 서버에 저장된 내용</div>
+        <div class="saved-summary-row${mine && mine.text ? '' : ' empty'}">${mine && mine.text ? esc(mine.text) : '(저장된 내용 없음)'}</div>
+      </div>
     </div>`;
   }
   return '';
@@ -253,6 +282,7 @@ function targetCard(t, idx) {
       </div>
       <div class="save-row"><button onclick="saveTargetEval('${t.topicId}')">저장</button></div>
       <div class="save-flash" id="flash-${t.topicId}"></div>
+      ${targetSavedSummary(t)}
     ` : ''}
   </div>`;
 }
@@ -278,6 +308,10 @@ function wrapupListenExtra() {
     <p class="hint" style="margin-top:-4px">7차시에 내가 발표할 때 위 피드백을 어떻게 반영할지 간단히 적어보자.</p>
     <div class="field-block"><textarea id="wrapupInput" placeholder="피드백 반영 계획">${esc(val)}</textarea></div>
     <div class="save-row"><button onclick="saveWrapup()">저장</button></div>
+    <div class="saved-summary">
+      <div class="saved-summary-label">💾 서버에 저장된 내용</div>
+      <div class="saved-summary-row${mine && mine.text ? '' : ' empty'}">${mine && mine.text ? esc(mine.text) : '(저장된 내용 없음)'}</div>
+    </div>
   </div>`;
 }
 
