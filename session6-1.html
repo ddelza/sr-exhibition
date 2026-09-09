@@ -136,13 +136,21 @@ window.saveTargetEval = async function(tid) {
   const now = Date.now();
   const writes = [];
   t.members.forEach(function(m) {
+    const payload = { evaluatorName: student.name, text: memberTexts[m.studentId] || '', updatedAt: now };
     writes.push(fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perMember/${tid}/${m.studentId}/${student.id}.json`, {
-      method: 'PUT', body: JSON.stringify({ evaluatorName: student.name, text: memberTexts[m.studentId] || '', updatedAt: now }),
+      method: 'PUT', body: JSON.stringify(payload),
     }));
+    // targets는 페이지 로드 시 한 번만 fetch한 캐시라, 저장 직후 폴링이 그 캐시로 다시 그리면
+    // 방금 쓴 내용이 아직 캐시에 없어 순간적으로 빈 칸처럼 보인다(실제로는 서버에 잘 저장됨).
+    // 그래서 저장한 값을 캐시에도 바로 반영해둔다.
+    t.perMember[m.studentId] = t.perMember[m.studentId] || {};
+    t.perMember[m.studentId][student.id] = payload;
   });
+  const groupPayload = { evaluatorName: student.name, scene, learned, updatedAt: now };
   writes.push(fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/${SESSION_NUM}/perGroup/${tid}/${student.id}.json`, {
-    method: 'PUT', body: JSON.stringify({ evaluatorName: student.name, scene, learned, updatedAt: now }),
+    method: 'PUT', body: JSON.stringify(groupPayload),
   }));
+  t.perGroup[student.id] = groupPayload;
   await Promise.all(writes);
   anyDirty = false;
   const flash = document.getElementById('flash-' + tid);
