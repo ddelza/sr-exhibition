@@ -111,25 +111,56 @@ s{N}/wrapup/{topicId}/{studentId}          = { role?, text, updatedAt }   // 발
   협업 필드들(2·3차시)은 모둠원 누구나 자유 편집이지만, 피드백/성찰은 "누가 누구에게 남기는
   개인적인 말"이라 자유 편집으로 하면 어색하다.
 
-## 폴링 중 입력 유실 방지 (반드시 챙길 것)
+## render() 중 입력 유실 방지 (반드시 챙길 것 — 실제 유실 사고 있었음)
 
 이 페이지들은 한 화면에 **동시에 여러 개의 textarea**(모둠원별 평가칸 여러 개 + 문항2 +
-문항3 + wrapup)가 떠 있을 수 있다. 5차시(`session5-1.html`)에서 실제로 겪은 사고: 포커스가
-빠진 순간 폴링이 오면 입력 중이던 내용이 통째로 사라짐. 여기서는 필드별로 dirty 플래그를 따로
-추적하는 대신, **컨테이너에 이벤트 위임으로 전역 `anyDirty` 플래그 하나**를 둔다:
+문항3 + wrapup)가 떠 있고, `render()`가 `innerHTML`을 통째로 교체하는 구조라 render()를
+부르는 모든 경로(8초 폴링, 다른 카드 저장, 카드 접기/펼치기)가 잠재적으로 위험하다.
+
+**처음 시도했다가 실패한 접근**: 전역 `anyDirty` 플래그 하나를 두고 `input` 이벤트 위임으로
+켜고, 폴링 함수에서 `if (anyDirty) return;`으로 재렌더를 건너뛰는 방식. 문제는 카드 A를
+저장하면 그 저장 함수가 `anyDirty = false`로 **전역** 리셋해버려서, 카드 B에 아직 저장 안 한
+입력이 남아 있어도 다음 render()가 카드 B를 지워버렸다. 카드를 접는 `toggleTarget()`은
+애초에 `anyDirty` 검사 없이 무조건 render()를 불렀으므로, 저장 안 하고 카드만 접어도 그
+자리에서 바로 사라졌다 — **새로고침해도 복구 안 되는 실제 학생 데이터 유실**로 이어졌다.
+
+**실제로 정착한 해결책**: dirty 여부를 아예 따지지 않는다. 대신 render()가 화면을 다시 그리기
+직전에 **지금 열려 있는 모든 카드의 현재 입력값을 무조건 초안(draft) 캐시에 담아두고**, 각
+필드를 그릴 때 저장된 값보다 이 초안을 우선한다:
 
 ```js
-document.getElementById('content').addEventListener('input', function(e) {
-  if (e.target.tagName === 'TEXTAREA') anyDirty = true;
-});
+let targetDrafts = {}; // tid -> { memberTexts: {studentId: text}, scene, learned }
+let wrapupDraft = null;
+
+function captureOpenDrafts() {
+  targets.forEach(function(t) {
+    if (!targetsOpen[t.topicId]) return;
+    // ...지금 DOM에 있는 mf-*, scene-*, learned-* 값을 그대로 읽어 targetDrafts[t.topicId]에 저장
+  });
+  const wrapupEl = document.getElementById('wrapupInput');
+  if (wrapupEl) wrapupDraft = wrapupEl.value;
+}
+
+function render() {
+  captureOpenDrafts(); // 반드시 innerHTML을 바꾸기 전에, 함수 맨 앞에서 호출
+  // ...html 조립... (각 textarea의 value는 draft가 있으면 draft, 없으면 저장된 값)
+  document.getElementById('content').innerHTML = html;
+}
 ```
 
-이 리스너는 `render()` 밖, 스크립트 최상단에서 **한 번만** 등록한다(`#content` 자체는
-`innerHTML` 교체에도 살아있으므로 이벤트 위임이 자식 재생성과 무관하게 계속 작동함). 폴링
-함수는 `if (anyDirty) return;` 으로 재렌더를 건너뛰고, 저장 함수들은 성공 후 `anyDirty = false`
-로 되돌린다. 정밀하게 필드 단위로 추적하지 않는 절충이지만(한 카드를 저장해도 다른 카드에
-남은 미저장 입력까지 초기화됨), 이 앱의 실제 사용 패턴(한 번에 카드 하나씩 채움)에서는
-충분히 안전하고 구현이 훨씬 단순하다.
+`toggleTarget(tid)`는 `targetsOpen[tid]`를 뒤집기 **전에** `captureOpenDrafts()`를 한 번 더
+호출한다 — render() 안의 호출은 이미 닫힌 카드는 건너뛰므로, 접히는 바로 그 카드는 상태가
+바뀌기 전에 캡처해둬야 한다. 저장 함수는 성공 후 해당 카드의 draft만 지운다
+(`delete targetDrafts[tid]`, `wrapupDraft = null`) — 다른 카드의 draft는 건드리지 않는다.
+
+이 방식은 render()가 **언제, 왜 호출되든** 입력 내용을 잃지 않는다는 게 핵심이라, dirty
+플래그 같은 절충이 필요 없다. 포커스/커서 위치도 `document.activeElement`를 render() 앞뒤로
+기억했다가 복원해서, 폴링이 와도 타이핑 중 커서가 튀지 않게 한다.
+
+**추가 안전장치**: 수정 중인 textarea와 "저장된 값"이 시각적으로 같은 칸이면 학생이 "진짜
+저장된 게 맞나" 불안해한다(실제 피드백으로 확인됨). 그래서 저장 버튼 아래에 `t.perMember`/
+`t.perGroup`(초안이 아니라 저장 확정된 값)만 보여주는 `💾 서버에 저장된 내용` 박스를 항상
+따로 둔다 — 5차시(`session5-1.html`)의 "서버에 저장된 내용" 박스와 같은 패턴.
 
 ## 재사용한 기존 패턴
 
@@ -139,10 +170,19 @@ document.getElementById('content').addEventListener('input', function(e) {
 - 4차시(`s4/canvaLink`) 발표자료 링크, 5차시(`s5/finalScript`) 대본을 발표자 화면에 참고
   링크로 노출 — 이미 있는 데이터를 다시 입력받지 않고 재사용.
 
-## 교사용 관리 페이지는 이번에 안 만들었음
+## 교사용 관리 페이지 (teacher67.html)
 
-`teacher6.html`/`teacher7.html`은 사용자가 명시적으로 요청하지 않아 이번 구현에 포함하지
-않았다(이 저장소의 관례: 학생용 페이지 먼저 만들고, 교사용은 "teacherN.html도 만들어줘"라는
-별도 요청이 왔을 때 추가 — 4·5차시도 이 순서로 진행됨). 다음에 필요해지면 `teacher4.html`/
-`teacher5.html` 패턴(비밀번호 게이트 + 반 선택 + 모둠 카드 + 상세 펼치기 + 피드백)을 그대로
-따르면 된다.
+6·7차시는 세션이 두 개(6, 7)에 데이터 종류도 두 가지(perMember/perGroup)라 `teacher4.html`/
+`teacher5.html`처럼 반별 모둠 카드만으로는 부족했다. `teacher67.html`은 두 부분으로 구성:
+1. **1차·2차 발표자 선택 현황** — 반 안 모든 모둠의 모든 학생이 `presentRole`을 골랐는지
+   한눈에(role-select.html의 학생용 현황 표시를 교사 전체 반 단위로 확장).
+2. **동료평가 필터** — `peerEval/6`과 `peerEval/7`을 모두 fetch해서 `{sess, kind, evaluatorId,
+   targetTopicId, targetStudentId?, ...}` 형태의 평평한 레코드 배열 하나로 합친 뒤, 반/차시/
+   유형(모둠원별·모둠전체)/준 사람·받은 사람 이름(부분 일치 검색)으로 클라이언트에서 필터링.
+   레코드가 어느 반 소속인지는 `finalGroups[evaluatorId].ban`으로 판단(평가자와 대상은 항상
+   같은 반 안에서만 로테이션하므로 평가자 기준 ban이면 충분).
+
+이 저장소의 관례대로, `teacher67.html`도 학생용 페이지들(role-select/session6-1/session7-1/
+peer-eval-view)이 먼저 만들어지고 검증된 뒤 별도 요청으로 추가됐다. 처음부터 teacherN 페이지를
+함께 만들 필요는 없다 — 학생용이 먼저 확정된 뒤에 교사용 요구사항(어떤 필터가 필요한지 등)이
+더 명확해진다.
