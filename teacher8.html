@@ -3,36 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>4차시 관리 — 자극과 반응 전람회</title>
+<title>8차시 관리 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
 <style>
-.wrap { max-width: 680px; }
+.wrap { max-width: 720px; }
 select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
 .group-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.group-card h2 { font-size: 0.95rem; margin: 0 0 4px; }
-.group-card .members { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px; }
-.status-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.status-chip { font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+.group-card h2 { font-size: 0.95rem; margin: 0 0 10px; }
+
+.student-block { border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.student-block:last-child { margin-bottom: 0; }
+.student-row { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.student-row .student-name { font-size: 0.88rem; font-weight: 700; }
+.status-chip { font-size: 0.74rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
 .status-chip.done { background: #dcf5e3; color: #1a5c2e; }
+.status-chip.partial { background: #fff3cd; color: #8a6d1c; }
 .status-chip.todo { background: var(--bg); color: var(--text-muted); }
-.link-line { font-size: 0.85rem; margin-bottom: 10px; }
-.link-line a { color: var(--accent); font-weight: 700; word-break: break-all; }
-.link-line .link-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
-.feedback-row { display: flex; gap: 8px; align-items: flex-start; }
-.feedback-row textarea { flex: 1; min-height: 50px; padding: 8px 10px; font-size: 0.85rem; }
-.feedback-row button {
-  padding: 9px 14px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
-  font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
-}
-.saved-flash { color: var(--accent); font-size: 0.72rem; margin-left: 6px; }
+
+.answer-wrap { margin-top: 10px; }
+.answer-block { background: var(--bg); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+.answer-block:last-child { margin-bottom: 0; }
+.answer-q { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
+.answer-a { font-size: 0.84rem; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+.answer-a.empty { color: var(--text-muted); }
+.rubric-label { font-size: 0.76rem; font-weight: 700; color: var(--text-muted); margin: 10px 0 4px; }
+.rubric-label:first-child { margin-top: 0; }
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <div class="header">
-    <h1>📽️ 4차시 관리 (교사용)</h1>
-    <p>반별로 각 모둠의 발표자료(캔바 링크) 저장 현황을 보고 피드백을 남기세요.</p>
+    <h1>📔 8차시 관리 (교사용)</h1>
+    <p>반별로 학생 개인 성찰일지 작성 현황과 내용을 확인하세요.</p>
   </div>
 
   <div class="step active" id="step-pw">
@@ -46,8 +49,8 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 
   <div class="step" id="step-main" style="display:none">
     <div class="who-banner">
-      <span>4차시 관리</span>
-      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a></div>
+      <span>8차시 관리</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a></div>
     </div>
 
     <div class="card">
@@ -64,14 +67,27 @@ const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
 const PASSWORD = 'byung0703!';
 const TARGET_GRADE = 3;
 let YEAR = null;
-let finalGroups = {}, posts = {}, preferences = {}, titleAll = {}, canvaLinkAll = {}, feedbackAll = {}, roster = {};
+let finalGroups = {}, posts = {}, preferences = {}, titleAll = {}, reflectionAll = {}, roster = {};
 let selectedBan = '';
+let expanded = {}; // studentId -> bool
+
+const QUESTIONS = [
+  ['q1a', '우리 탐구 결과, 왜 그런 현상이 일어나는지 설명해주는 과학적 원리는?', '① 지식 내재화하기'],
+  ['q1b', '그 원리를 친구·동생에게 설명한다면 어떻게 풀어서 말할까?', '① 지식 내재화하기'],
+  ['q2a', '처음에 어떤 질문(궁금증)에서 시작했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2b', '왜 그런 결과가 나올 거라고 생각했나? (가설과 이유)', '② 탐구 과정 및 논리 점검하기'],
+  ['q2c', '가설을 확인하기 위해 어떤 실험을 계획했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2d', '탐구 과정에서 어떤 문제·어려움이 있었나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2e', '그 문제를 어떻게 해결했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2f', '전시 발표 때 무엇을 중심으로 설명했고, 어떤 반응을 받았나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q3a', '나는 어떤 태도로 참여했는지 스스로 평가', '③ 과학적 소양 및 삶과 연결하기'],
+  ['q3b', '배운 지식을 건강·진로·사회 중 하나와 연결 + 실천 포부', '③ 과학적 소양 및 삶과 연결하기'],
+];
 
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
 
 window.checkPw = function() {
   const v = document.getElementById('pwInput').value;
@@ -97,21 +113,18 @@ async function loadYear() {
 async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
-  const s4 = `${DB_URL}/years/${YEAR}/exhibition/s4`;
-  const [fg, p, pref, tt, cl, fb] = await Promise.all([
+  const [fg, p, pref, tt, rf] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
     fetch(`${s2}/title.json`).then(r => r.json()),
-    fetch(`${s4}/canvaLink.json`).then(r => r.json()),
-    fetch(`${s4}/feedback.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s8/reflection.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
   preferences = pref || {};
   titleAll = tt || {};
-  canvaLinkAll = cl || {};
-  feedbackAll = fb || {};
+  reflectionAll = rf || {};
 }
 
 function bansAvailable() {
@@ -144,11 +157,38 @@ function memberLabel(studentId) {
   return esc(studentId);
 }
 
-function linkLine(topicId) {
-  const link = canvaLinkAll[topicId];
-  if (!link || !link.url) return '<div class="link-line" style="color:var(--text-muted)">아직 저장된 링크가 없습니다.</div>';
-  return `<div class="link-line"><a href="${escAttr(link.url)}" target="_blank" rel="noopener">${esc(link.url)}</a>
-    <div class="link-meta">최종 수정: ${esc(link.lastEditorName)}</div></div>`;
+function filledCount(entry) {
+  if (!entry) return 0;
+  return QUESTIONS.filter(([k]) => (entry[k] || '').trim()).length;
+}
+
+window.toggleExpand = function(studentId) {
+  expanded[studentId] = !expanded[studentId];
+  render();
+};
+
+function studentBlock(topicId, studentId) {
+  const entry = (reflectionAll[topicId] || {})[studentId];
+  const n = filledCount(entry);
+  const statusClass = n === 0 ? 'todo' : (n === QUESTIONS.length ? 'done' : 'partial');
+  const statusLabel = n === 0 ? '미작성' : `${n}/${QUESTIONS.length}개 작성`;
+  const isOpen = expanded[studentId];
+  let lastRubric = '';
+  return `<div class="student-block">
+    <div class="student-row" onclick="toggleExpand('${studentId}')">
+      <span class="student-name">${memberLabel(studentId)}</span>
+      <span class="status-chip ${statusClass}">${statusLabel}</span>
+    </div>
+    ${isOpen ? `<div class="answer-wrap">${QUESTIONS.map(function([k, label, rubric]) {
+      const header = rubric !== lastRubric ? `<div class="rubric-label">${esc(rubric)}</div>` : '';
+      lastRubric = rubric;
+      const val = entry ? entry[k] : '';
+      return `${header}<div class="answer-block">
+        <div class="answer-q">${esc(label)}</div>
+        <div class="answer-a${val ? '' : ' empty'}">${val ? esc(val) : '(작성 안 함)'}</div>
+      </div>`;
+    }).join('')}</div>` : ''}
+  </div>`;
 }
 
 function render() {
@@ -164,37 +204,16 @@ function render() {
     return;
   }
 
-  wrap.innerHTML = topicIds.map(topicId => {
+  wrap.innerHTML = topicIds.map(function(topicId) {
     const post = posts[topicId] || {};
     const t = titleAll[topicId];
-    const fb = feedbackAll[topicId];
-    const hasLink = !!(canvaLinkAll[topicId] && canvaLinkAll[topicId].url);
-
+    const members = groups[topicId];
     return `<div class="group-card">
-      <h2>${t && t.text ? esc(t.text) : '(제목 미정)'}</h2>
-      <div class="members">${esc(post.question || topicId)}</div>
-      <div class="members">${groups[topicId].map(memberLabel).join(', ')}</div>
-      <div class="status-row">
-        <span class="status-chip ${hasLink ? 'done' : 'todo'}">캔바 링크 ${hasLink ? '저장됨' : '없음'}</span>
-      </div>
-      ${linkLine(topicId)}
-      <div class="feedback-row">
-        <textarea id="fb-${topicId}" placeholder="이 모둠에 남길 피드백">${esc(fb ? fb.text : '')}</textarea>
-        <button onclick="saveFeedback('${topicId}')">저장</button>
-      </div>
-      <span class="saved-flash" id="flash-${topicId}"></span>
+      <h2>${t && t.text ? esc(t.text) : '(제목 미정)'} <span style="color:var(--text-muted);font-weight:400">— ${esc(post.question || topicId)}</span></h2>
+      ${members.map(function(sid) { return studentBlock(topicId, sid); }).join('')}
     </div>`;
   }).join('');
 }
-
-window.saveFeedback = async function(topicId) {
-  const text = document.getElementById('fb-' + topicId).value.trim();
-  const payload = { text, ts: Date.now() };
-  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/feedback/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
-  feedbackAll[topicId] = payload;
-  const flash = document.getElementById('flash-' + topicId);
-  if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
-};
 
 async function loadRoster() {
   const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
