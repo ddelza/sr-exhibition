@@ -63,6 +63,19 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .copy-group-row { text-align: right; margin-top: -4px; margin-bottom: 12px; }
 .copy-group-row button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 0.74rem; color: var(--text-muted); cursor: pointer; }
 .copy-group-row button:hover { color: var(--accent); border-color: var(--accent); }
+
+.rendered-block { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+.rendered-block:last-child { margin-bottom: 0; }
+.rendered-block .rb-type { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.rendered-block .block-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 6px; }
+.rendered-block .block-caption { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+.rendered-block .block-text { font-size: 0.85rem; line-height: 1.55; white-space: pre-wrap; }
+.rendered-block .photo-preview { max-width: 100%; border-radius: 8px; display: block; margin-bottom: 6px; }
+.rendered-block .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 0.76rem; }
+.rendered-block .legend-item { display: flex; align-items: center; gap: 5px; }
+.rendered-block .legend-swatch { width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
+.canva-link-box { margin-top: 10px; }
+.canva-link-box a { color: var(--accent); font-weight: 700; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -121,8 +134,9 @@ const PASSWORD = 'byung0703!';
 const TARGET_GRADE = 3;
 let YEAR = null;
 let finalGroups = {}, posts = {}, preferences = {}, roster = {};
-let s2Title = {}, s2Items = {}, s3Blocks = {}, s3Summary = {}, s8Reflection = {};
-let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {};
+let s2Title = {}, s2Items = {}, s3Blocks = {}, s3Summary = {}, s8Reflection = {}, s4CanvaLink = {};
+let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {}, peerMember6 = {}, peerMember7 = {};
+let s6Wrapup = {}, s7Wrapup = {};
 let gradingAll = {}; // topicId -> studentId -> {q_*, updatedAt}
 let selectedBan = '';
 let mode = null; // 'student' | 'criterion'
@@ -167,7 +181,7 @@ const CRITERIA = [
   { key: 'q_procedure', label: '③ 탐구 절차 설계하기', max: 2, min: 0, group: '탐구 설계하기 (6점)', scope: 'group', content: c => contentProcedure(c) },
   { key: 'q_result', label: '④ 결과 해석 및 결론 도출하기', max: 3, min: 0, note: '(원본상 1~3점만 확인됨)', group: '탐구 결과 분석하기 (3점)', scope: 'group', content: c => contentResult(c) },
   { key: 'q_display', label: '⑤ 전시물 구성하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '탐구 부스 운영하기 (4점)', scope: 'group', content: c => contentDisplay(c) },
-  { key: 'q_qa', label: '⑥ 질의응답하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '탐구 부스 운영하기 (4점)', scope: 'group', content: c => '<div class="no-content">디지털 기록 없음 — 전시 당일 관객 질의응답 대응을 직접 관찰한 기록을 참고하세요.</div>' },
+  { key: 'q_qa', label: '⑥ 질의응답하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨 · 디지털 직접기록은 없어 6·7차시 피드백 교환 내용을 참고자료로 보여줌)', group: '탐구 부스 운영하기 (4점)', scope: 'student', content: c => contentQA(c) },
   { key: 'q_reflect1', label: '⑦ 지식 내재화하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q1a', 'q1b']) },
   { key: 'q_reflect2', label: '⑧ 탐구 과정 및 논리 점검하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q2a', 'q2b', 'q2c', 'q2d', 'q2e', 'q2f']) },
   { key: 'q_reflect3', label: '⑨ 과학적 소양 및 삶과 연결하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q3a', 'q3b']) },
@@ -188,6 +202,138 @@ function groupTitleOf(topicId) {
   const t = s2Title[topicId];
   return (t && t.text) || (posts[topicId] && posts[topicId].question) || topicId;
 }
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+// ── 3차시-①(session3-1.html) 블록을 그대로 실제 렌더링하기 위해 그 파일의
+// 차트/표 렌더 로직을 그대로 옮겨왔다. 원본이 바뀌면 여기도 맞춰서 갱신할 것. ──
+function chartColor(i) {
+  const colors = ['var(--accent)', '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22'];
+  return colors[i % colors.length];
+}
+function chartDash(i) {
+  const dashes = ['', '6,4', '2,3', '10,3,2,3', '1,4'];
+  return dashes[i % dashes.length];
+}
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const step = (max - min) / count;
+  const ticks = [];
+  for (let i = 0; i <= count; i++) ticks.push(min + step * i);
+  return ticks;
+}
+function formatTickLabel(v, step) {
+  return step >= 1 ? Math.round(v) : Math.round(v * 100) / 100;
+}
+function seriesOf(b) {
+  if (b.series && b.series.length) return b.series;
+  if (b.points && b.points.length) return [{ name: '', points: b.points }];
+  return [];
+}
+function renderChartSVG(b) {
+  const series = seriesOf(b).map(function(s) {
+    return { name: s.name || '', points: (s.points || []).map(function(p) { return { x: String(p.x), y: Number(p.y) }; }).filter(function(p) { return p.x !== '' && !isNaN(p.y); }) };
+  }).filter(function(s) { return s.points.length; });
+  if (!series.length) return '<div class="cc-empty">데이터 없음</div>';
+  const cats = [];
+  series.forEach(function(s) { s.points.forEach(function(p) { if (cats.indexOf(p.x) === -1) cats.push(p.x); }); });
+  if (cats.every(function(c) { return !isNaN(Number(c)); })) cats.sort(function(a, b2) { return Number(a) - Number(b2); });
+  const W = 320, H = 220, PAD_L = 40, PAD_B = 38, PAD_T = 20, PAD_R = 14;
+  const plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  const allY = [].concat.apply([], series.map(function(s) { return s.points.map(function(p) { return p.y; }); }));
+  let yMin = Math.min(0, Math.min.apply(null, allY)), yMax = Math.max(0, Math.max.apply(null, allY));
+  if (yMin === yMax) yMax += 1;
+  const headroom = (yMax - yMin) * 0.12;
+  yMax += headroom;
+  if (yMin < 0) yMin -= headroom;
+  const sy = function(y) { return PAD_T + plotH - (y - yMin) / (yMax - yMin) * plotH; };
+  const slotW = plotW / cats.length;
+  const catX = function(i) { return PAD_L + slotW * (i + 0.5); };
+  const yTicks = niceTicks(yMin, yMax, 4);
+  const yTickStep = yTicks.length > 1 ? yTicks[1] - yTicks[0] : 1;
+  let axisHtml = yTicks.map(function(t) {
+    const y = sy(t);
+    return '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#e5e5e5"/>' +
+      '<text x="' + (PAD_L - 6) + '" y="' + (y + 3) + '" font-size="9" fill="#888" text-anchor="end">' + formatTickLabel(t, yTickStep) + '</text>';
+  }).join('');
+  axisHtml += cats.map(function(c, i) { return '<text x="' + catX(i) + '" y="' + (H - PAD_B + 14) + '" font-size="9" fill="#888" text-anchor="middle">' + esc(c) + '</text>'; }).join('');
+  axisHtml += '<line x1="' + PAD_L + '" y1="' + (H - PAD_B) + '" x2="' + (W - PAD_R) + '" y2="' + (H - PAD_B) + '" stroke="#999"/>' +
+    '<line x1="' + PAD_L + '" y1="' + PAD_T + '" x2="' + PAD_L + '" y2="' + (H - PAD_B) + '" stroke="#999"/>';
+  axisHtml += '<text x="' + (W - PAD_R) + '" y="' + (H - 4) + '" font-size="9" fill="#666" font-weight="700" text-anchor="end">' + esc(b.xLabel || 'x') + '</text>';
+  axisHtml += '<text x="2" y="' + (PAD_T - 7) + '" font-size="9" fill="#666" font-weight="700" text-anchor="start">' + esc(b.yLabel || 'y') + '</text>';
+  let dataHtml = '';
+  if (b.chartType === 'bar') {
+    const groupW = slotW * 0.7;
+    const barW = groupW / series.length;
+    series.forEach(function(s, si) {
+      cats.forEach(function(c, ci) {
+        const p = s.points.filter(function(pt) { return pt.x === c; })[0];
+        if (!p) return;
+        const gx0 = catX(ci) - groupW / 2 + si * barW;
+        const y0 = sy(0), y1 = sy(p.y);
+        dataHtml += '<rect x="' + gx0 + '" y="' + Math.min(y0, y1) + '" width="' + (barW - 1) + '" height="' + Math.abs(y1 - y0) + '" fill="' + chartColor(si) + '"/>';
+      });
+    });
+  } else {
+    series.forEach(function(s, si) {
+      const pts = cats.map(function(c, ci) {
+        const p = s.points.filter(function(pt) { return pt.x === c; })[0];
+        return p ? { cx: catX(ci), cy: sy(p.y) } : null;
+      }).filter(Boolean);
+      const dash = chartDash(si);
+      dataHtml += '<polyline points="' + pts.map(function(p) { return p.cx + ',' + p.cy; }).join(' ') + '" fill="none" stroke="' + chartColor(si) + '" stroke-width="2"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+      dataHtml += pts.map(function(p) { return '<circle cx="' + p.cx + '" cy="' + p.cy + '" r="3" fill="' + chartColor(si) + '"/>'; }).join('');
+    });
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:var(--bg);border-radius:8px">' + axisHtml + dataHtml + '</svg>';
+}
+function chartLegendHtml(b) {
+  const series = seriesOf(b).filter(function(s) { return (s.points || []).length; });
+  if (series.length <= 1) return '';
+  const styleFor = function(dash) {
+    if (dash === '6,4' || dash === '10,3,2,3') return 'dashed';
+    if (dash === '2,3' || dash === '1,4') return 'dotted';
+    return 'solid';
+  };
+  return '<div class="chart-legend">' + series.map(function(s, si) {
+    return '<span class="legend-item"><span class="legend-swatch" style="border-top-color:' + chartColor(si) + ';border-top-style:' + styleFor(chartDash(si)) + '"></span>' + esc(s.name || ('계열 ' + (si + 1))) + '</span>';
+  }).join('') + '</div>';
+}
+const TITLED_TYPES = ['photo', 'graph', 'resultsTable', 'freeTable'];
+function blockTitleHtml(b) {
+  return TITLED_TYPES.indexOf(b.type) !== -1 && b.title ? '<div class="block-title">' + esc(b.title) + '</div>' : '';
+}
+function renderBlockFull(b) {
+  const titleHtml = blockTitleHtml(b);
+  let inner = '';
+  if (b.type === 'photo') {
+    inner = (b.imageData ? '<img class="photo-preview" src="' + b.imageData + '">' : '<div class="cc-empty">사진 없음</div>') + (b.caption ? '<div class="block-caption">' + esc(b.caption) + '</div>' : '');
+  } else if (b.type === 'graph') {
+    inner = renderChartSVG(b) + chartLegendHtml(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
+  } else if (b.type === 'resultsTable') {
+    const rows = b.rows || [];
+    inner = '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' + (rows.map(function(r) { return '<tr><td>' + esc(r.condition) + '</td><td>' + esc(r.result) + '</td></tr>'; }).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table>';
+  } else if (b.type === 'freeTable') {
+    const rowsN = b.rows || 0, colsN = b.cols || 0, cells = b.cells || {};
+    let t = '<table class="block-table">';
+    for (let r = 0; r < rowsN; r++) {
+      t += '<tr>';
+      for (let c = 0; c < colsN; c++) t += '<td>' + esc(cells[r + '-' + c] || '') + '</td>';
+      t += '</tr>';
+    }
+    inner = t + '</table>';
+  } else if (b.type === 'link') {
+    inner = '<a href="' + escAttr(b.url || '#') + '" target="_blank" rel="noopener">' + esc(b.description || b.url || '(링크 없음)') + '</a>';
+  } else if (b.type === 'text') {
+    inner = '<div class="block-text">' + esc(b.content || '') + '</div>';
+  }
+  return `<div class="rendered-block"><div class="rb-type">${BLOCK_LABELS[b.type] || b.type}</div>${titleHtml}${inner}</div>`;
+}
+function renderBlocksSection(topicId) {
+  const blocks = s3Blocks[topicId] || {};
+  const sorted = Object.values(blocks).sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (!sorted.length) return '<span class="cc-empty">(3차시 ① 작성 없음)</span>';
+  return sorted.map(renderBlockFull).join('');
+}
 
 function contentQuestion(c) {
   return `<div>${esc((c.post || {}).question) || '<span class="cc-empty">(작성 없음)</span>'}</div>`;
@@ -202,31 +348,33 @@ function contentProcedure(c) {
   const parts = S2_FIELD_LABELS.map(function([key, label]) {
     const list = Object.values(items[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     if (!list.length) return '';
-    return `<div class="cc-label">${label}</div>` + list.map(it => esc(it.text)).join(', ');
+    return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => esc(it.text)).join(', ');
   }).filter(Boolean).join('');
-  return parts || '<span class="cc-empty">(작성 없음)</span>';
+  return (parts || '<span class="cc-empty">(2차시 작성 없음)</span>') +
+    '<div class="cc-label">3차시 ① 실험 보고서 (전체)</div>' + renderBlocksSection(c.topicId);
 }
 function contentResult(c) {
   const summary = s3Summary[c.topicId] || {};
-  const parts = [['actualResult', '실제 실험 결과'], ['conclusion', '결론 정리']].map(function([key, label]) {
+  const parts = [['prediction', '가설 예측'], ['actualResult', '실제 실험 결과'], ['conclusion', '결론 정리'], ['principle', '원리 탐구']].map(function([key, label]) {
     const list = Object.values(summary[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     if (!list.length) return '';
     return `<div class="cc-label">${label}</div>` + list.map(it => esc(it.text)).join('<br>');
   }).filter(Boolean).join('');
-  return parts || '<span class="cc-empty">(작성 없음)</span>';
+  return parts || '<span class="cc-empty">(3차시 ② 작성 없음)</span>';
 }
 function contentDisplay(c) {
-  const blocks = s3Blocks[c.topicId] || {};
-  const sorted = Object.values(blocks).sort((a, b) => (a.order || 0) - (b.order || 0));
-  if (!sorted.length) return '<span class="cc-empty">(작성 없음)</span>';
-  return sorted.map(function(b) {
-    const label = BLOCK_LABELS[b.type] || b.type;
-    const title = b.title ? ` — ${esc(b.title)}` : '';
-    let extra = '';
-    if (b.type === 'text') extra = `: ${esc((b.content || '').slice(0, 60))}`;
-    if (b.type === 'link') extra = `: ${esc(b.description || b.url || '')}`;
-    return `<div>${label}${title}${extra}</div>`;
-  }).join('');
+  const link = s4CanvaLink[c.topicId];
+  return renderBlocksSection(c.topicId) +
+    `<div class="canva-link-box cc-label">4차시 · 캔바 발표자료</div>` +
+    (link && link.url ? `<a href="${escAttr(link.url)}" target="_blank" rel="noopener">${esc(link.url)}</a>` : '<span class="cc-empty">(저장된 링크 없음)</span>');
+}
+function contentQA(c) {
+  const w6 = (s6Wrapup[c.topicId] || {})[c.studentId];
+  const w7 = (s7Wrapup[c.topicId] || {})[c.studentId];
+  const w6Label = w6 && w6.role === 'p1' ? '6차시 · 2차 발표자에게 남긴 피드백' : '6차시 · 피드백 반영 계획';
+  const w7Note = w6 && w6.role === 'p1' ? ' (1차 발표자는 작성 대상 아님)' : '';
+  return `<div class="cc-label">${w6Label}</div>${w6 && w6.text ? esc(w6.text) : '<span class="cc-empty">(작성 없음)</span>'}` +
+    `<div class="cc-label">7차시 · 피드백을 반영한 내용(성찰)${w7Note}</div>${w7 && w7.text ? esc(w7.text) : '<span class="cc-empty">(작성 없음)</span>'}`;
 }
 function contentReflect(c, keys) {
   const r = s8Reflection[c.topicId] && s8Reflection[c.topicId][c.studentId];
@@ -237,14 +385,24 @@ function contentReflect(c, keys) {
   }).join('');
 }
 function contentPeer(c) {
-  const targets = new Set();
-  [peerGroup6, peerGroup7].forEach(function(pg) {
+  const given = [];
+  [[6, peerGroup6], [7, peerGroup7]].forEach(function([sess, pg]) {
     Object.entries(pg).forEach(function([targetTopicId, byEval]) {
-      if ((byEval || {})[c.studentId]) targets.add(groupTitleOf(targetTopicId));
+      const entry = (byEval || {})[c.studentId];
+      if (entry) given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>인상깊은 장면: ${esc(entry.scene) || '-'}<br>알게 된 점: ${esc(entry.learned) || '-'}`);
     });
   });
-  if (!targets.size) return '<span class="cc-empty">(평가 남긴 모둠 없음)</span>';
-  return `<div>${targets.size}개 모둠에 동료평가 남김: ${[...targets].map(esc).join(', ')}</div>`;
+  const received = [];
+  [[6, peerMember6], [7, peerMember7]].forEach(function([sess, pm]) {
+    const mine = ((pm[c.topicId] || {})[c.studentId]) || {};
+    Object.values(mine).forEach(function(entry) {
+      received.push(`<div class="cc-label">${sess}차시 · ${esc(entry.evaluatorName)}님이 남김</div>${esc(entry.text) || '<span class="cc-empty">(내용 없음)</span>'}`);
+    });
+  });
+  return `<div class="cc-label" style="font-size:0.78rem">▶ 내가 준 동료평가 (${given.length}건)</div>` +
+    (given.join('') || '<span class="cc-empty">(남긴 평가 없음)</span>') +
+    `<div class="cc-label" style="font-size:0.78rem;margin-top:10px">◀ 내가 받은 동료평가 (${received.length}건, 참고용)</div>` +
+    (received.join('') || '<span class="cc-empty">(받은 평가 없음)</span>');
 }
 
 function memberLabel(studentId) {
@@ -259,7 +417,7 @@ async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
   const s3 = `${DB_URL}/years/${YEAR}/exhibition/s3`;
-  const [fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, gr] = await Promise.all([
+  const [fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, pm6, pm7, w6, w7, cl, gr] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
@@ -271,6 +429,11 @@ async function loadAll() {
     fetch(`${DB_URL}/years/${YEAR}/exhibition/presentRole.json`).then(r => r.json()),
     fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/6/perGroup.json`).then(r => r.json()),
     fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/7/perGroup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/6/perMember.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/peerEval/7/perMember.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s6/wrapup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/canvaLink.json`).then(r => r.json()),
     fetch(`${DB_URL}/years/${YEAR}/exhibition/grading.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
@@ -284,6 +447,11 @@ async function loadAll() {
   presentRoleAll = pr || {};
   peerGroup6 = pg6 || {};
   peerGroup7 = pg7 || {};
+  peerMember6 = pm6 || {};
+  peerMember7 = pm7 || {};
+  s6Wrapup = w6 || {};
+  s7Wrapup = w7 || {};
+  s4CanvaLink = cl || {};
   gradingAll = gr || {};
 }
 
