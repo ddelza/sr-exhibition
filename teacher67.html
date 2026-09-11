@@ -18,6 +18,16 @@ select, input[type=text] { padding: 9px 12px; border: 1.5px solid var(--border);
 .role-row:last-child { border-bottom: none; }
 .role-tag { font-size: 0.74rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--bg); color: var(--text-muted); }
 .role-tag.set { background: #dcf5e3; color: #1a5c2e; }
+.role-tag.missing { background: #fdecea; color: #c0392b; }
+
+.wrap-check-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.wrap-check-row:last-child { border-bottom: none; }
+.wrap-check-head { display: flex; justify-content: space-between; align-items: center; }
+.wrap-check-head .wc-name { font-size: 0.84rem; font-weight: 700; }
+.wrap-check-item { margin-top: 6px; }
+.wrap-check-item .wc-label { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); }
+.wrap-check-item .wc-text { font-size: 0.82rem; line-height: 1.5; color: var(--text); white-space: pre-wrap; margin-top: 2px; }
+.wrap-check-item .wc-text.empty { color: var(--text-muted); }
 
 .eval-item { background: var(--surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .eval-item .eval-meta { font-size: 0.74rem; color: var(--text-muted); margin-bottom: 6px; }
@@ -58,6 +68,8 @@ select, input[type=text] { padding: 9px 12px; border: 1.5px solid var(--border);
 
     <div id="roleStatus"></div>
 
+    <div id="wrapupStatus"></div>
+
     <div class="card">
       <h2>동료평가 필터</h2>
       <div class="filter-row">
@@ -88,6 +100,7 @@ const PASSWORD = 'byung0703!';
 const TARGET_GRADE = 3;
 let YEAR = null;
 let finalGroups = {}, posts = {}, preferences = {}, titleAll = {}, presentRoleAll = {}, roster = {};
+let s6Wrapup = {}, s7Wrapup = {};
 let records = []; // flat list of every peer-eval record across 6·7차시
 let selectedBan = '';
 
@@ -141,7 +154,7 @@ async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
   const pe = `${DB_URL}/years/${YEAR}/exhibition/peerEval`;
-  const [fg, p, pref, tt, pr, pm6, pg6, pm7, pg7] = await Promise.all([
+  const [fg, p, pref, tt, pr, pm6, pg6, pm7, pg7, w6, w7] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
@@ -151,12 +164,16 @@ async function loadAll() {
     fetch(`${pe}/6/perGroup.json`).then(r => r.json()),
     fetch(`${pe}/7/perMember.json`).then(r => r.json()),
     fetch(`${pe}/7/perGroup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s6/wrapup.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s7/wrapup.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
   preferences = pref || {};
   titleAll = tt || {};
   presentRoleAll = pr || {};
+  s6Wrapup = w6 || {};
+  s7Wrapup = w7 || {};
 
   records = [];
   [[6, pm6 || {}], [7, pm7 || {}]].forEach(function([sess, pmAll]) {
@@ -204,6 +221,7 @@ function renderBanSelect() {
 window.onBanChange = function() {
   selectedBan = document.getElementById('banSelect').value;
   renderRoleStatus();
+  renderWrapupStatus();
   renderEvalList();
 };
 
@@ -234,6 +252,54 @@ function renderRoleStatus() {
       }).join('')}
     </div>`;
   }).join('') + `</div>`;
+}
+
+// 6·7차시 발표 후 피드백 교환(1차발표자→피드백, 2차발표자→반영계획, 7차시 성찰)이
+// 모둠원별로 실제 채워졌는지 한눈에 확인하는 현황판.
+function renderWrapupStatus() {
+  const wrap = document.getElementById('wrapupStatus');
+  const groups = {};
+  Object.entries(finalGroups).forEach(([sid, g]) => {
+    if (String(g.ban) !== selectedBan) return;
+    (groups[g.topicId] = groups[g.topicId] || []).push(sid);
+  });
+  const topicIds = Object.keys(groups);
+  if (!topicIds.length) { wrap.innerHTML = ''; return; }
+
+  wrap.innerHTML = `<div class="card"><h2 style="margin-bottom:10px">6·7차시 피드백 작성 현황</h2>` + topicIds.map(function(topicId) {
+    const members = groups[topicId];
+    const w6 = s6Wrapup[topicId] || {};
+    const w7 = s7Wrapup[topicId] || {};
+    return `<div class="role-status-card">
+      <h2>${esc(groupTitle(topicId))}</h2>
+      ${members.map(function(sid) {
+        const role = (presentRoleAll[topicId] || {})[sid];
+        const roleVal = role ? role.role : null;
+        const e6 = w6[sid];
+        const e7 = w7[sid];
+        let items = '';
+        if (!roleVal) {
+          items = '<div class="wrap-check-item"><span class="wc-label">역할 미정 — 발표차시 정하기 전이라 어떤 항목을 써야 할지 알 수 없음</span></div>';
+        } else if (roleVal === 'p1') {
+          items = wrapCheckItem('6차시 · 2차 발표자에게 남긴 피드백', e6);
+        } else {
+          items = wrapCheckItem('6차시 · 피드백 반영 계획', e6) + wrapCheckItem('7차시 · 피드백을 반영한 내용(성찰)', e7);
+        }
+        const allDone = roleVal && (roleVal === 'p1' ? !!(e6 && e6.text) : !!(e6 && e6.text) && !!(e7 && e7.text));
+        return `<div class="wrap-check-row">
+          <div class="wrap-check-head"><span class="wc-name">${memberLabel(sid)}</span><span class="role-tag ${roleVal ? (allDone ? 'set' : 'missing') : ''}">${roleVal ? (allDone ? '완료' : '미완료') : '역할 미정'}</span></div>
+          ${items}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('') + `</div>`;
+}
+function wrapCheckItem(label, entry) {
+  const has = !!(entry && entry.text);
+  return `<div class="wrap-check-item">
+    <span class="wc-label">${label} ${has ? '✅' : '❌ 미작성'}</span>
+    <div class="wc-text${has ? '' : ' empty'}">${has ? esc(entry.text) : '(작성 없음)'}</div>
+  </div>`;
 }
 
 window.renderEvalList = function() {
@@ -286,6 +352,7 @@ async function init() {
     await loadAll();
     renderBanSelect();
     renderRoleStatus();
+    renderWrapupStatus();
     renderEvalList();
   } catch (e) {
     document.getElementById('evalList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
