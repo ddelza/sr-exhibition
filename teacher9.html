@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>9차시 관리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 720px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.group-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 0.95rem; margin: 0 0 10px; }
+
+.student-block { border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.student-block:last-child { margin-bottom: 0; }
+.student-row { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.student-row .student-name { font-size: 0.88rem; font-weight: 700; }
+.status-chip { font-size: 0.74rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.status-chip.done { background: #dcf5e3; color: #1a5c2e; }
+.status-chip.partial { background: #fff3cd; color: #8a6d1c; }
+.status-chip.todo { background: var(--bg); color: var(--text-muted); }
+
+.answer-wrap { margin-top: 10px; }
+.answer-block { background: var(--bg); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+.answer-block:last-child { margin-bottom: 0; }
+.answer-q { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin-bottom: 3px; }
+.answer-a { font-size: 0.84rem; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+.answer-a.empty { color: var(--text-muted); }
+.rubric-label { font-size: 0.76rem; font-weight: 700; color: var(--text-muted); margin: 10px 0 4px; }
+.rubric-label:first-child { margin-top: 0; }
+.meta-line { font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📔 9차시 관리 (교사용)</h1>
+    <p>구글 설문지(실전 성찰일지)에 쌓인 응답을 반별로 확인하세요.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>9차시 관리</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher.html">전람회 채점</a></div>
+    </div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div id="groupList"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const APPS_SCRIPT_URL = 'REPLACE_WITH_DEPLOYED_WEBAPP_URL';
+const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3;
+let YEAR = null;
+let roster = {}; // studentId -> {ban, num, name}
+let reflectionBySid = {}; // studentId -> row entry
+let selectedBan = '';
+let expanded = {};
+
+const QUESTIONS = [
+  ['q1a', '우리 탐구 결과, 왜 그런 현상이 일어나는지 설명해주는 과학적 원리는?', '① 지식 내재화하기'],
+  ['q1b', '그 원리를 친구·동생에게 설명한다면 어떻게 풀어서 말할까?', '① 지식 내재화하기'],
+  ['q2a', '처음에 어떤 질문(궁금증)에서 시작했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2b', '왜 그런 결과가 나올 거라고 생각했나? (가설과 이유)', '② 탐구 과정 및 논리 점검하기'],
+  ['q2c', '가설을 확인하기 위해 어떤 실험을 계획했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2d', '탐구 과정에서 어떤 문제·어려움이 있었나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2e', '그 문제를 어떻게 해결했나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q2f', '전시 발표 때 무엇을 중심으로 설명했고, 어떤 반응을 받았나?', '② 탐구 과정 및 논리 점검하기'],
+  ['q3a', '나는 어떤 태도로 참여했는지 스스로 평가', '③ 과학적 소양 및 삶과 연결하기'],
+  ['q3b', '배운 지식을 건강·진로·사회 중 하나와 연결 + 실천 포부', '③ 과학적 소양 및 삶과 연결하기'],
+];
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
+async function loadReflections() {
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', 'getReflections');
+  const res = await fetch(url.toString());
+  const data = await res.json();
+  if (data && data.error) throw new Error(data.error);
+  const map = {};
+  (data.rows || []).forEach(r => { map[r.sid] = r; });
+  reflectionBySid = map;
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(roster).map(s => String(s.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">학생 명단이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  render();
+};
+
+function filledCount(entry) {
+  if (!entry) return 0;
+  return QUESTIONS.filter(([k]) => (entry[k] || '').trim()).length;
+}
+
+window.toggleExpand = function(studentId) {
+  expanded[studentId] = !expanded[studentId];
+  render();
+};
+
+function formatTs(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function studentBlock(studentId, s) {
+  const entry = reflectionBySid[studentId];
+  const n = filledCount(entry);
+  const statusClass = n === 0 ? 'todo' : (n === QUESTIONS.length ? 'done' : 'partial');
+  const statusLabel = n === 0 ? '미제출' : `${n}/${QUESTIONS.length}개 작성`;
+  const isOpen = expanded[studentId];
+  let lastRubric = '';
+  return `<div class="student-block">
+    <div class="student-row" onclick="toggleExpand('${studentId}')">
+      <span class="student-name">${esc(s.num)}번 ${esc(s.name)}</span>
+      <span class="status-chip ${statusClass}">${statusLabel}</span>
+    </div>
+    ${isOpen ? `<div class="answer-wrap">${QUESTIONS.map(function([k, label, rubric]) {
+      const header = rubric !== lastRubric ? `<div class="rubric-label">${esc(rubric)}</div>` : '';
+      lastRubric = rubric;
+      const val = entry ? entry[k] : '';
+      return `${header}<div class="answer-block">
+        <div class="answer-q">${esc(label)}</div>
+        <div class="answer-a${val ? '' : ' empty'}">${val ? esc(val) : '(작성 안 함)'}</div>
+      </div>`;
+    }).join('')}${entry ? `<div class="meta-line">제출 계정: ${esc(entry.email)}${entry.timestamp ? ' · ' + formatTs(entry.timestamp) : ''}</div>` : ''}</div>` : ''}
+  </div>`;
+}
+
+function render() {
+  const wrap = document.getElementById('groupList');
+  const members = Object.entries(roster)
+    .filter(([, s]) => String(s.ban) === selectedBan)
+    .sort((a, b) => (a[1].num || 0) - (b[1].num || 0));
+  if (!members.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 학생 명단이 없습니다.</div>';
+    return;
+  }
+  const submitted = members.filter(([sid]) => filledCount(reflectionBySid[sid]) > 0).length;
+  wrap.innerHTML = `<div class="group-card">
+    <h2>${esc(selectedBan)}반 제출 현황 <span style="color:var(--text-muted);font-weight:400">— ${submitted}/${members.length}명 제출</span></h2>
+    ${members.map(([sid, s]) => studentBlock(sid, s)).join('')}
+  </div>`;
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadRoster();
+    await loadReflections();
+    renderBanSelect();
+    render();
+  } catch (e) {
+    document.getElementById('groupList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
