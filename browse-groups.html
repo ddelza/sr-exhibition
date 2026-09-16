@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>다른 모둠 구경하기 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 640px; }
+.group-card { background: var(--surface); border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 2px solid transparent; }
+.group-card.mine { border-color: var(--accent); }
+.group-card h2 { font-size: 1rem; margin: 0 0 8px; color: var(--accent); }
+.post-hypo { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.6; margin-bottom: 10px; }
+.post-hypo b { color: var(--accent); }
+.member-list { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px; }
+.member-list .me { color: var(--text); font-weight: 700; }
+
+.resource-block { margin-top: 10px; }
+.resource-block:first-of-type { margin-top: 0; }
+.resource-label { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin-bottom: 5px; }
+.resource-link { display: inline-block; font-size: 0.86rem; color: var(--accent); font-weight: 700; word-break: break-all; }
+.resource-empty { font-size: 0.82rem; color: var(--text-muted); }
+.script-box { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.84rem; line-height: 1.6; white-space: pre-wrap; max-height: 220px; overflow-y: auto; }
+.video-embed { position: relative; width: 100%; padding-top: 56.25%; border-radius: 10px; overflow: hidden; background: #000; }
+.video-embed iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🔍 다른 모둠 구경하기</h1>
+    <p>같은 반 다른 모둠의 발표자료(캔바)·대본·발표 영상을 둘러보자.</p>
+  </div>
+
+  <div class="who-banner">
+    <span id="whoLabel"></span>
+    <a href="index.html">메인으로</a>
+  </div>
+
+  <div id="content"><div class="loading-state">불러오는 중...</div></div>
+</div>
+
+<script src="session.js"></script>
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const student = requireSrLogin();
+let myBan = null;
+let myTopicId = null;
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+function youtubeEmbedUrl(url) {
+  if (!url) return null;
+  let id = null;
+  let m = url.match(/[?&]v=([^&]+)/);
+  if (m) id = m[1];
+  if (!id) { m = url.match(/youtu\.be\/([^?&]+)/); if (m) id = m[1]; }
+  if (!id) { m = url.match(/youtube\.com\/embed\/([^?&]+)/); if (m) id = m[1]; }
+  if (!id) { m = url.match(/youtube\.com\/shorts\/([^?&]+)/); if (m) id = m[1]; }
+  return id ? `https://www.youtube.com/embed/${id}` : null;
+}
+
+function groupCard(topicId, g, post, canva, script, video) {
+  const isMine = topicId === myTopicId;
+  const embedUrl = video && video.url ? youtubeEmbedUrl(video.url) : null;
+  return `<div class="group-card${isMine ? ' mine' : ''}">
+    <h2>${esc(g.label || post.question || topicId)}${isMine ? ' (내 모둠)' : ''}</h2>
+    ${post.question ? `<div class="post-hypo">
+      <b>독립변인</b> ${esc(post.iv)} &nbsp;·&nbsp; <b>종속변인</b> ${esc(post.dv)}<br>
+      ${esc(post.hypothesis)}
+    </div>` : ''}
+    <div class="member-list">모둠원: ${g.members.map(m => `<span class="${m.studentId === student.id ? 'me' : ''}">${esc(m.num)}번 ${esc(m.name)}</span>`).join(', ')}</div>
+
+    <div class="resource-block">
+      <div class="resource-label">📽️ 발표자료 (캔바)</div>
+      ${canva && canva.url ? `<a class="resource-link" href="${escAttr(canva.url)}" target="_blank" rel="noopener">${esc(canva.url)} →</a>` : '<div class="resource-empty">아직 등록되지 않았습니다.</div>'}
+    </div>
+
+    <div class="resource-block">
+      <div class="resource-label">📝 발표 대본</div>
+      ${script && script.text ? `<div class="script-box">${esc(script.text)}</div>` : '<div class="resource-empty">아직 등록되지 않았습니다.</div>'}
+    </div>
+
+    <div class="resource-block">
+      <div class="resource-label">🎬 발표 영상</div>
+      ${embedUrl ? `<div class="video-embed"><iframe src="${escAttr(embedUrl)}" allowfullscreen></iframe></div>`
+        : (video && video.url ? `<a class="resource-link" href="${escAttr(video.url)}" target="_blank" rel="noopener">${esc(video.url)} →</a>`
+        : '<div class="resource-empty">아직 등록되지 않았습니다.</div>')}
+    </div>
+  </div>`;
+}
+
+(async function init() {
+  if (!student) return;
+  document.getElementById('whoLabel').textContent = srWhoLabel(student);
+  try {
+    const YEAR = await loadYear();
+    const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+    const s4 = `${DB_URL}/years/${YEAR}/exhibition/s4`;
+    const s5 = `${DB_URL}/years/${YEAR}/exhibition/s5`;
+    const video = `${DB_URL}/years/${YEAR}/exhibition/video`;
+
+    const [finalAllRes, prefAllRes, postsRes] = await Promise.all([
+      fetch(`${s1}/finalGroups.json`).then(r => r.json()),
+      fetch(`${s1}/preferences.json`).then(r => r.json()),
+      fetch(`${s1}/posts.json`).then(r => r.json()),
+    ]);
+    const finalAll = finalAllRes || {};
+    const prefAll = prefAllRes || {};
+    const posts = postsRes || {};
+
+    const mine = finalAll[student.id];
+    if (!mine) {
+      document.getElementById('content').innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
+      return;
+    }
+    myBan = mine.ban;
+    myTopicId = mine.topicId;
+
+    const groups = {}; // topicId -> { label, members: [] }
+    Object.entries(finalAll).forEach(([sid, g]) => {
+      if (String(g.ban) !== String(myBan)) return;
+      const info = prefAll[sid] || {};
+      (groups[g.topicId] = groups[g.topicId] || { label: g.topicLabel, members: [] }).members.push({
+        studentId: sid, num: info.num, name: info.name || sid,
+      });
+    });
+    Object.values(groups).forEach(g => g.members.sort((a, b) => (a.num || 0) - (b.num || 0)));
+
+    const topicIds = Object.keys(groups);
+    const [canvaAllRes, scriptAllRes, videoAllRes] = await Promise.all([
+      fetch(`${s4}/canvaLink.json`).then(r => r.json()),
+      fetch(`${s5}/finalScript.json`).then(r => r.json()),
+      fetch(`${video}/youtubeLink.json`).then(r => r.json()),
+    ]);
+    const canvaAll = canvaAllRes || {};
+    const scriptAll = scriptAllRes || {};
+    const videoAll = videoAllRes || {};
+
+    // 내 모둠을 맨 위에, 나머지는 topicId 등록 순서대로
+    topicIds.sort((a, b) => (a === myTopicId ? -1 : b === myTopicId ? 1 : 0));
+
+    const html = topicIds.map(topicId => groupCard(
+      topicId, groups[topicId], posts[topicId] || {}, canvaAll[topicId], scriptAll[topicId], videoAll[topicId]
+    )).join('');
+    document.getElementById('content').innerHTML = html || '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

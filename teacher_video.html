@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>발표 영상 등록 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 720px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.group-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.group-card h2 { font-size: 0.95rem; margin: 0 0 8px; color: var(--accent); }
+.member-list { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+
+.link-row { display: flex; gap: 8px; }
+.link-row input { flex: 1; padding: 9px 11px; font-size: 0.88rem; }
+.link-row button {
+  padding: 9px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.link-meta { font-size: 0.76rem; color: var(--text-muted); margin-top: 6px; }
+.link-meta.saved { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>🎬 발표 영상 등록 (교사용)</h1>
+    <p>반별 모둠마다 발표 영상 유튜브 링크를 등록하면, 학생들이 "다른 모둠 구경하기"에서 바로 볼 수 있습니다.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>발표 영상 등록</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher9.html">9차시 관리</a><a href="teacher.html">전람회 채점</a></div>
+    </div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div id="groupList"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'byung0703!';
+let YEAR = null;
+let finalGroups = {}, posts = {}, preferences = {}, videoAll = {};
+let selectedBan = '';
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const video = `${DB_URL}/years/${YEAR}/exhibition/video`;
+  const [fg, p, pref, va] = await Promise.all([
+    fetch(`${s1}/finalGroups.json`).then(r => r.json()),
+    fetch(`${s1}/posts.json`).then(r => r.json()),
+    fetch(`${s1}/preferences.json`).then(r => r.json()),
+    fetch(`${video}/youtubeLink.json`).then(r => r.json()),
+  ]);
+  finalGroups = fg || {};
+  posts = p || {};
+  preferences = pref || {};
+  videoAll = va || {};
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(finalGroups).map(g => String(g.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 모둠이 배정된 반이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  render();
+};
+
+window.saveVideo = async function(topicId) {
+  const input = document.getElementById('vlink-' + topicId);
+  const url = input.value.trim();
+  const YEAR_ = YEAR;
+  const payload = { url, updatedAt: Date.now() };
+  await fetch(`${DB_URL}/years/${YEAR_}/exhibition/video/youtubeLink/${topicId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  videoAll[topicId] = payload;
+  const meta = document.getElementById('vmeta-' + topicId);
+  if (meta) { meta.textContent = '✓ 저장됨 · 방금 전'; meta.classList.add('saved'); }
+};
+
+function render() {
+  const wrap = document.getElementById('groupList');
+  const groups = {};
+  Object.entries(finalGroups).forEach(([sid, g]) => {
+    if (String(g.ban) !== selectedBan) return;
+    (groups[g.topicId] = groups[g.topicId] || []).push(sid);
+  });
+  const topicIds = Object.keys(groups);
+  if (!topicIds.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+    return;
+  }
+
+  wrap.innerHTML = topicIds.map(function(topicId) {
+    const post = posts[topicId] || {};
+    const members = groups[topicId].map(sid => (preferences[sid] || {})).sort((a, b) => (a.num || 0) - (b.num || 0));
+    const memberLabel = members.map(m => `${esc(m.num)}번 ${esc(m.name)}`).join(', ');
+    const video = videoAll[topicId];
+    return `<div class="group-card">
+      <h2>${esc(post.question || topicId)}</h2>
+      <div class="member-list">모둠원: ${memberLabel}</div>
+      <div class="link-row">
+        <input type="text" id="vlink-${topicId}" placeholder="https://www.youtube.com/watch?v=..." value="${escAttr(video ? video.url : '')}">
+        <button onclick="saveVideo('${topicId}')">저장</button>
+      </div>
+      <div class="link-meta" id="vmeta-${topicId}">${video && video.updatedAt ? '저장된 링크가 있습니다.' : '아직 등록되지 않았습니다.'}</div>
+    </div>`;
+  }).join('');
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    renderBanSelect();
+    render();
+  } catch (e) {
+    document.getElementById('groupList').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
