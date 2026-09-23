@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전체 진행현황 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 1100px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.summary-line { font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 14px; }
+.summary-line b.warn-count { color: var(--danger); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+.table-scroll { overflow-x: auto; background: var(--surface); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+table.status-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; white-space: nowrap; }
+table.status-table th, table.status-table td { padding: 6px 8px; text-align: center; border-bottom: 1px solid var(--border); }
+table.status-table th { font-size: 0.72rem; color: var(--text-muted); font-weight: 700; background: var(--bg); position: sticky; top: 0; }
+table.status-table th.divider, table.status-table td.divider { border-right: 2px solid var(--border); }
+table.status-table td.id-cell, table.status-table th.id-cell { text-align: left; white-space: normal; max-width: 130px; }
+table.status-table td.id-cell .unassigned { color: var(--danger); font-weight: 700; font-size: 0.72rem; }
+table.status-table td.topic-cell { text-align: left; white-space: normal; max-width: 160px; font-size: 0.74rem; color: var(--text-muted); }
+
+.stcell.ok { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.stcell.bad { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+.stcell.warn { background: #fff6d0; color: #7a5c00; font-weight: 700; }
+.stcell.na { background: var(--bg); color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📊 전체 진행현황 (교사용)</h1>
+    <p>반을 선택하면 학생별로 1~9차시 제출 여부를 한 번에 확인할 수 있습니다. 빈 칸(빨간색)이 있으면 아직 작성되지 않은 것입니다.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>전체 진행현황</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher9.html">9차시 관리</a><a href="teacher_video.html">발표 영상 등록</a><a href="teacher.html">전람회 채점</a></div>
+    </div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div id="tableWrap"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzk2I1RcMujFqqig9sbsibUT9prLKLjnwahwExupNIbGgUrVH_M_SDCkjjhSxODV-9rZQ/exec';
+const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3;
+const S8_KEYS = ['q1a','q1b','q2a','q2b','q2c','q2d','q2e','q2f','q3a','q3b'];
+const S9_KEYS = S8_KEYS;
+const S2_FIELDS = ['materials','measurement','controlledVars','steps','precautions','memo'];
+
+let YEAR = null;
+let roster = {};       // studentId -> {grade, ban, num, name}
+let finalGroups = {};  // studentId -> {ban, topicId, topicLabel}
+let preferences = {};  // studentId -> {num, name, choice1..}
+let titleAll = {};     // topicId -> {text}
+let s2Data = {}, s3Data = {}, s4Data = {}, s5Data = {};
+let presentRoleAll = {}; // topicId -> studentId -> {role, updatedAt}
+let s6Data = {}, s7Data = {}, s8Data = {};
+let reflection9BySid = {}; // studentId -> row entry
+let selectedBan = '';
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadReflections9() {
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', 'getReflections');
+  try {
+    const res = await fetch(url.toString());
+    const data = await res.json();
+    const map = {};
+    (data.rows || []).forEach(r => { map[r.sid] = r; });
+    return map;
+  } catch (e) {
+    return {}; // 9차시 API가 응답 안 해도 나머지 표는 정상 표시되게
+  }
+}
+
+async function loadAll() {
+  const base = `${DB_URL}/years/${YEAR}`;
+  const ex = `${base}/exhibition`;
+  const [rosterRes, s1Res, s2Res, s3Res, s4Res, s5Res, presentRoleRes, s6Res, s7Res, s8Res, ref9] = await Promise.all([
+    fetch(`${base}/students.json`).then(r => r.json()),
+    fetch(`${ex}/s1.json`).then(r => r.json()),
+    fetch(`${ex}/s2.json`).then(r => r.json()),
+    fetch(`${ex}/s3.json`).then(r => r.json()),
+    fetch(`${ex}/s4.json`).then(r => r.json()),
+    fetch(`${ex}/s5.json`).then(r => r.json()),
+    fetch(`${ex}/presentRole.json`).then(r => r.json()),
+    fetch(`${ex}/s6.json`).then(r => r.json()),
+    fetch(`${ex}/s7.json`).then(r => r.json()),
+    fetch(`${ex}/s8.json`).then(r => r.json()),
+    loadReflections9(),
+  ]);
+  const allRoster = rosterRes || {};
+  roster = {};
+  Object.entries(allRoster).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) roster[id] = s; });
+  const s1 = s1Res || {};
+  finalGroups = s1.finalGroups || {};
+  preferences = s1.preferences || {};
+  titleAll = (s2Res || {}).title || {};
+  s2Data = s2Res || {};
+  s3Data = s3Res || {};
+  s4Data = s4Res || {};
+  s5Data = s5Res || {};
+  presentRoleAll = presentRoleRes || {};
+  s6Data = s6Res || {};
+  s7Data = s7Res || {};
+  s8Data = s8Res || {};
+  reflection9BySid = ref9 || {};
+}
+
+function bansAvailable() {
+  const set = new Set(Object.values(roster).map(s => String(s.ban)));
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">학생 명단이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  render();
+};
+
+// ── 차시별 상태 계산 ──────────────────────────────────
+
+function s2Count(topicId) {
+  if (!topicId) return 0;
+  let n = 0;
+  S2_FIELDS.forEach(f => { n += Object.keys(((s2Data[f] || {})[topicId]) || {}).length; });
+  return n;
+}
+function s3BlockCount(topicId) {
+  if (!topicId) return 0;
+  return Object.keys(((s3Data.blocks || {})[topicId]) || {}).length;
+}
+function s3SummaryCount(topicId) {
+  if (!topicId) return 0;
+  const s = ((s3Data.summary || {})[topicId]) || {};
+  return ['prediction', 'actualResult', 'conclusion', 'principle'].filter(k => String(s[k] || '').trim()).length;
+}
+function s4Done(topicId) {
+  if (!topicId) return false;
+  const c = (s4Data.canvaLink || {})[topicId];
+  return !!(c && c.url);
+}
+function s5PersonalDone(topicId, sid) {
+  if (!topicId) return false;
+  const e = ((s5Data.myScript || {})[topicId] || {})[sid];
+  return !!(e && e.text && e.text.trim());
+}
+function roleOf(topicId, sid) {
+  if (!topicId) return null;
+  return ((presentRoleAll[topicId] || {})[sid]) || null;
+}
+function s6Status(topicId, sid) {
+  const role = roleOf(topicId, sid);
+  if (!role) return 'na';
+  const e = ((s6Data.wrapup || {})[topicId] || {})[sid];
+  return (e && e.text && e.text.trim()) ? 'done' : 'missing';
+}
+function s7Status(topicId, sid) {
+  const role = roleOf(topicId, sid);
+  if (!role || role.role !== 'p2') return 'na'; // 1차발표자(p1)는 7차시에 쓸 성찰이 없음
+  const e = ((s7Data.wrapup || {})[topicId] || {})[sid];
+  return (e && e.text && e.text.trim()) ? 'done' : 'missing';
+}
+function s8Count(topicId, sid) {
+  if (!topicId) return 0;
+  const e = ((s8Data.reflection || {})[topicId] || {})[sid];
+  if (!e) return 0;
+  return S8_KEYS.filter(k => String(e[k] || '').trim()).length;
+}
+function s9Count(sid) {
+  const e = reflection9BySid[sid];
+  if (!e) return 0;
+  return S9_KEYS.filter(k => String(e[k] || '').trim()).length;
+}
+
+// ── 셀 렌더링 ──────────────────────────────────
+
+function cellOX(done) { return `<td class="stcell ${done ? 'ok' : 'bad'}">${done ? 'O' : 'X'}</td>`; }
+function cellTri(status) {
+  if (status === 'na') return '<td class="stcell na">–</td>';
+  return cellOX(status === 'done');
+}
+function cellCount(n, max) {
+  if (n === 0) return `<td class="stcell bad">0${max ? '/' + max : '개'}</td>`;
+  const done = max ? n === max : true;
+  return `<td class="stcell ${done ? 'ok' : 'warn'}">${n}${max ? '/' + max : '개'}</td>`;
+}
+
+function studentRowHtml(sid, s) {
+  const fg = finalGroups[sid];
+  const topicId = fg ? fg.topicId : null;
+  const pref = preferences[sid];
+  const title = topicId ? (titleAll[topicId] || {}).text : null;
+
+  return `<tr>
+    <td class="id-cell">${esc(s.num)}번 ${esc(s.name)}${!fg ? '<div class="unassigned">⚠ 모둠 미배정</div>' : ''}</td>
+    <td class="topic-cell divider">${title ? esc(title) : (topicId ? '(제목 미정)' : '—')}</td>
+    ${cellOX(!!pref)}
+    ${cellCount(s2Count(topicId))}
+    <td class="divider"></td>
+    ${cellCount(s3BlockCount(topicId))}
+    ${cellCount(s3SummaryCount(topicId), 4)}
+    <td class="divider"></td>
+    ${cellOX(s4Done(topicId))}
+    <td class="divider"></td>
+    ${cellOX(s5PersonalDone(topicId, sid))}
+    <td class="divider"></td>
+    ${cellOX(!!roleOf(topicId, sid))}
+    <td class="divider"></td>
+    ${cellTri(s6Status(topicId, sid))}
+    <td class="divider"></td>
+    ${cellTri(s7Status(topicId, sid))}
+    <td class="divider"></td>
+    ${cellCount(s8Count(topicId, sid), S8_KEYS.length)}
+    <td class="divider"></td>
+    ${cellCount(s9Count(sid), S9_KEYS.length)}
+  </tr>`;
+}
+
+function render() {
+  const wrap = document.getElementById('tableWrap');
+  const members = Object.entries(roster)
+    .filter(([, s]) => String(s.ban) === selectedBan)
+    .sort((a, b) => (a[1].num || 0) - (b[1].num || 0));
+
+  if (!members.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 학생 명단이 없습니다.</div>';
+    return;
+  }
+
+  const unassignedCount = members.filter(([sid]) => !finalGroups[sid]).length;
+  const summary = `<div class="summary-line">${esc(selectedBan)}반 총 ${members.length}명${unassignedCount ? ` · <b class="warn-count">모둠 미배정 ${unassignedCount}명</b>` : ' · 전원 모둠 배정 완료'}</div>`;
+
+  const legend = `<div class="legend">
+    <span><span class="sw" style="background:var(--accent-soft)"></span>완료</span>
+    <span><span class="sw" style="background:#fff6d0"></span>일부만 작성</span>
+    <span><span class="sw" style="background:var(--danger-soft)"></span>미작성/누락</span>
+    <span><span class="sw" style="background:var(--bg)"></span>해당 없음(그 차시에 안 써도 되는 경우)</span>
+  </div>`;
+
+  const rows = members.map(([sid, s]) => studentRowHtml(sid, s)).join('');
+
+  wrap.innerHTML = summary + legend + `<div class="table-scroll"><table class="status-table">
+    <thead>
+      <tr>
+        <th rowspan="2" class="id-cell">학생</th>
+        <th rowspan="2" class="topic-cell divider">모둠</th>
+        <th rowspan="2">1차시<br>지망신청</th>
+        <th rowspan="2">2차시<br>탐구계획</th>
+        <th rowspan="2" class="divider"></th>
+        <th colspan="2">3차시</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">4차시<br>캔바</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">5차시<br>개인대본</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">발표차시<br>역할선택</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">6차시<br>피드백</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">7차시<br>성찰</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">8차시<br>성찰일지</th>
+        <th rowspan="2" class="divider"></th>
+        <th rowspan="2">9차시<br>성찰일지</th>
+      </tr>
+      <tr>
+        <th>① 결과</th>
+        <th>② 정리</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    renderBanSelect();
+    render();
+  } catch (e) {
+    document.getElementById('tableWrap').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
