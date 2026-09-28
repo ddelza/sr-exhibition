@@ -60,6 +60,7 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .crit-content .cc-tag { font-size: 0.68rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
 .crit-content .cc-own-item { margin-bottom: 6px; }
 .crit-content .cc-own-item:last-child { margin-bottom: 0; }
+.crit-content .cc-sublabel { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); margin: 6px 0 2px; }
 .crit-content .no-content { color: var(--text-muted); font-style: normal; }
 .block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 4px; }
 .block-table th, .block-table td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
@@ -374,8 +375,22 @@ function contentProcedure(c) {
     if (!list.length) return '';
     return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => esc(it.text)).join(', ');
   }).filter(Boolean).join('');
+
+  // 2차시 항목·3차시① 자료는 모둠원 누구나 작성할 수 있는 협업 항목이라 author(=작성한 학번)가
+  // 남아있다. 모둠 전체 내용 아래에, 이 학생이 직접 작성한 것만 따로 걸러서 보여준다.
+  const myItemsParts = S2_FIELD_LABELS.map(function([key, label]) {
+    const list = Object.values(items[key] || {}).filter(it => it.author === c.studentId).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (!list.length) return '';
+    return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => `<div class="cc-own-item">${esc(it.text)}</div>`).join('');
+  }).filter(Boolean).join('');
+  const myBlocks = Object.values(s3Blocks[c.topicId] || {}).filter(b => b.author === c.studentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const myBlocksHtml = myBlocks.map(renderBlockFull).join('');
+  const myContent = (myItemsParts || myBlocksHtml) ? myItemsParts + myBlocksHtml
+    : '<span class="cc-empty">(본인이 직접 작성한 항목 없음 — 모둠원이 대신 작성했을 수 있음)</span>';
+
   return (parts || '<span class="cc-empty">(2차시 작성 없음)</span>') +
-    '<div class="cc-label">3차시 ① 실험 보고서 (전체)</div>' + renderBlocksSection(c.topicId);
+    '<div class="cc-label">3차시 ① 실험 보고서 (전체)</div>' + renderBlocksSection(c.topicId) +
+    '<div class="cc-label">본인이 작성한 내용</div>' + myContent;
 }
 function contentResult(c) {
   const summary = s3Summary[c.topicId] || {};
@@ -410,10 +425,20 @@ function contentReflect(c, keys) {
 }
 function contentPeer(c) {
   const given = [];
-  [[6, peerGroup6], [7, peerGroup7]].forEach(function([sess, pg]) {
+  [[6, peerGroup6, peerMember6], [7, peerGroup7, peerMember7]].forEach(function([sess, pg, pm]) {
     Object.entries(pg).forEach(function([targetTopicId, byEval]) {
       const entry = (byEval || {})[c.studentId];
-      if (entry) given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>인상깊은 장면: ${esc(entry.scene) || '-'}<br>알게 된 점: ${esc(entry.learned) || '-'}`);
+      if (!entry) return;
+      // 문항①(모둠원별 평가)은 peerMember 쪽에 대상 학생별로 따로 저장돼 있으니,
+      // 이 학생이 그 모둠의 각 발표자에게 남긴 개별 평가도 함께 찾아서 보여준다.
+      const memberEvals = Object.entries((pm || {})[targetTopicId] || {}).map(function([targetStudentId, byEvaluator]) {
+        const e = (byEvaluator || {})[c.studentId];
+        if (!e) return '';
+        return `<div class="cc-own-item"><b>${esc(memberLabel(targetStudentId))}</b>: ${esc(e.text) || '<span class="cc-empty">(내용 없음)</span>'}</div>`;
+      }).filter(Boolean).join('');
+      given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>` +
+        (memberEvals ? `<div class="cc-sublabel">모둠원별 평가</div>${memberEvals}` : '') +
+        `<div class="cc-sublabel">인상깊은 장면·알게 된 점</div>인상깊은 장면: ${esc(entry.scene) || '-'}<br>알게 된 점: ${esc(entry.learned) || '-'}`);
     });
   });
   const received = [];
