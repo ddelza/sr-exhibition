@@ -750,7 +750,7 @@ function renderGrader() {
 
   const critSelect = document.getElementById('critSelect');
   if (critSelect && !critSelect.dataset.filled) {
-    critSelect.innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} (${esc(c.group)})</option>`).join('');
+    critSelect.innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} · 배점 0~${c.max}점 · ${esc(c.group)}</option>`).join('');
     critSelect.value = selectedCrit;
     critSelect.dataset.filled = '1';
   }
@@ -762,7 +762,7 @@ async function init() {
     await loadRoster();
     await loadAll();
     renderBanSelect();
-    document.getElementById('critSelect').innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} (${esc(c.group)})</option>`).join('');
+    document.getElementById('critSelect').innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} · 배점 0~${c.max}점 · ${esc(c.group)}</option>`).join('');
     document.getElementById('critSelect').dataset.filled = '1';
   } catch (e) {
     document.getElementById('groupPick').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
