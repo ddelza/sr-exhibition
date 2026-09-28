@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학생 점수표 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 1100px; }
+.summary-line { font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+.table-scroll { overflow-x: auto; background: var(--surface); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+table.score-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; white-space: nowrap; }
+table.score-table th, table.score-table td { padding: 6px 8px; text-align: center; border-bottom: 1px solid var(--border); }
+table.score-table th { font-size: 0.72rem; color: var(--text-muted); font-weight: 700; background: var(--bg); position: sticky; top: 0; cursor: default; }
+table.score-table td.id-cell, table.score-table th.id-cell { text-align: left; white-space: normal; max-width: 110px; }
+table.score-table td.ban-cell { color: var(--text-muted); }
+table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 800; color: var(--accent); border-left: 2px solid var(--border); }
+
+.stcell { font-weight: 700; }
+.stcell.gray { background: var(--bg); color: var(--text-muted); }
+.stcell.green { background: var(--accent-soft); color: var(--accent); }
+.stcell.red { background: var(--danger-soft); color: var(--danger); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>📋 학생 점수표</h1>
+    <p>전체 학생의 채점 현황을 한 표에서 확인합니다. 회색=채점 안 함, 초록=만점, 빨강=채점했지만 만점 아님.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>학생 점수표</span>
+      <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher9.html">9차시 관리</a><a href="teacher_video.html">발표 영상 등록</a><a href="teacher-status.html">전체 진행현황</a><a href="teacher.html">전람회 채점</a></div>
+    </div>
+
+    <div id="tableWrap"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'byung0703!';
+const TARGET_GRADE = 3;
+let YEAR = null;
+let roster = {};       // studentId -> {grade, ban, num, name}
+let finalGroups = {};  // studentId -> {ban, topicId, topicLabel}
+let gradingAll = {};   // topicId -> studentId -> {q_*, updatedAt}
+
+// teacher.html의 CRITERIA와 key/label/max/group을 동일하게 유지할 것 — 채점 페이지가
+// 바뀌면 여기도 같이 맞춰서 갱신해야 한다(점수 자체는 grading/{topicId}/{studentId}를
+// 그대로 읽어오므로, 이 배열은 표시용 라벨·만점 정의로만 쓰인다).
+const CRITERIA = [
+  { key: 'q_question', label: '① 질문 만들기', max: 2 },
+  { key: 'q_hypo', label: '② 가설·변인 연결하기', max: 2 },
+  { key: 'q_procedure', label: '③ 탐구 절차 설계하기', max: 2 },
+  { key: 'q_result', label: '④ 결과 해석 및 결론 도출하기', max: 3 },
+  { key: 'q_display', label: '⑤ 전시물 구성하기', max: 2 },
+  { key: 'q_qa', label: '⑥ 질의응답하기', max: 2 },
+  { key: 'q_reflect1', label: '⑦ 지식 내재화하기', max: 2 },
+  { key: 'q_reflect2', label: '⑧ 탐구 과정 및 논리 점검하기', max: 2 },
+  { key: 'q_reflect3', label: '⑨ 과학적 소양 및 삶과 연결하기', max: 2 },
+  { key: 'q_peer', label: '⑩ 동료에게 비판적 질문하기', max: 4 },
+  { key: 'q_concept', label: '⑪ 핵심 개념 구조화하기', max: 2 },
+];
+const CRIT_MAX_TOTAL = CRITERIA.reduce((s, c) => s + c.max, 0);
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/config/current.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const [rosterRes, fgRes, gradingRes] = await Promise.all([
+    fetch(`${DB_URL}/years/${YEAR}/students.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups.json`).then(r => r.json()),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/grading.json`).then(r => r.json()),
+  ]);
+  const allRoster = rosterRes || {};
+  roster = {};
+  Object.entries(allRoster).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) roster[id] = s; });
+  finalGroups = fgRes || {};
+  gradingAll = gradingRes || {};
+}
+
+function scoreCell(topicId, studentId, crit) {
+  const rec = topicId ? ((gradingAll[topicId] || {})[studentId] || {}) : {};
+  const val = rec[crit.key];
+  if (val === undefined || val === null) return '<td class="stcell gray">–</td>';
+  const cls = Number(val) === crit.max ? 'green' : 'red';
+  return `<td class="stcell ${cls}">${esc(val)}</td>`;
+}
+
+function studentRowHtml(sid, s) {
+  const fg = finalGroups[sid];
+  const topicId = fg ? fg.topicId : null;
+  const rec = topicId ? ((gradingAll[topicId] || {})[sid] || {}) : {};
+  const total = CRITERIA.reduce((sum, c) => sum + (Number(rec[c.key]) || 0), 0);
+  return `<tr>
+    <td class="ban-cell">${esc(s.ban)}반</td>
+    <td class="id-cell">${esc(s.num)}번 ${esc(s.name)}</td>
+    ${CRITERIA.map(c => scoreCell(topicId, sid, c)).join('')}
+    <td class="total-cell">${total} / ${CRIT_MAX_TOTAL}</td>
+  </tr>`;
+}
+
+function render() {
+  const wrap = document.getElementById('tableWrap');
+  const students = Object.entries(roster).sort((a, b) => {
+    const ba = a[1].ban || 0, bb = b[1].ban || 0;
+    if (ba !== bb) return ba - bb;
+    return (a[1].num || 0) - (b[1].num || 0);
+  });
+  if (!students.length) {
+    wrap.innerHTML = '<div class="empty-state">학생 명단이 없습니다.</div>';
+    return;
+  }
+
+  const summary = `<div class="summary-line">3학년 전체 ${students.length}명</div>`;
+  const legend = `<div class="legend">
+    <span><span class="sw" style="background:var(--bg)"></span>채점 안 함</span>
+    <span><span class="sw" style="background:var(--accent-soft)"></span>만점</span>
+    <span><span class="sw" style="background:var(--danger-soft)"></span>채점했지만 만점 아님</span>
+  </div>`;
+
+  const rows = students.map(([sid, s]) => studentRowHtml(sid, s)).join('');
+
+  wrap.innerHTML = summary + legend + `<div class="table-scroll"><table class="score-table">
+    <thead>
+      <tr>
+        <th>반</th>
+        <th class="id-cell">학생</th>
+        ${CRITERIA.map(c => `<th title="${esc(c.label)} · 배점 0~${c.max}점">${c.label.match(/^[①-⑪]/)[0]}<br>/${c.max}</th>`).join('')}
+        <th class="total-cell">합계</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadAll();
+    render();
+  } catch (e) {
+    document.getElementById('tableWrap').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
