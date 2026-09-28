@@ -9,7 +9,12 @@
 .wrap { max-width: 640px; }
 .g-login-card { text-align: center; padding: 28px 20px; }
 .g-login-card p { font-size: 0.86rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 18px; }
-#gSignInBtn { display: flex; justify-content: center; margin: 0 auto; }
+#gSignInBtn {
+  display: inline-flex; align-items: center; gap: 10px; justify-content: center; margin: 0 auto;
+  padding: 11px 20px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface);
+  color: var(--text); font-family: inherit; font-size: 0.92rem; font-weight: 700; cursor: pointer;
+}
+#gSignInBtn:disabled { opacity: 0.6; cursor: default; }
 .g-login-note { font-size: 0.76rem; color: var(--text-muted); margin-top: 16px; line-height: 1.6; }
 
 .student-banner { background: var(--accent-soft); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; }
@@ -70,7 +75,7 @@
     <div class="card g-login-card">
       <h2>학교 구글 계정으로 로그인</h2>
       <p>본인 확인을 위해 학교에서 배정받은 구글 계정(@gwangsu.ms.kr)으로<br>로그인해주세요. 다른 사람의 점수는 볼 수 없습니다.</p>
-      <div id="gSignInBtn"></div>
+      <button id="gSignInBtn" type="button">Google로 로그인</button>
       <div class="error-msg" id="loginError"></div>
       <div class="g-login-note">로그인이 안 된다면 선생님께 말씀해주세요.</div>
     </div>
@@ -85,11 +90,9 @@
   </div>
 </div>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="session.js"></script>
 <script>
 const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
-const GOOGLE_CLIENT_ID = 'REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzk2I1RcMujFqqig9sbsibUT9prLKLjnwahwExupNIbGgUrVH_M_SDCkjjhSxODV-9rZQ/exec';
 const TARGET_GRADE = 3;
 let YEAR = null;
@@ -529,6 +532,9 @@ function render() {
   `;
 }
 
+// 로그인 확인된 이메일을 학생 명단(years/{year}/students)과 대조해 본인 확인.
+// 일치하는 학생이 없으면 false를 돌려줘서, 모듈 스크립트 쪽에서 로그아웃 처리하게 한다
+// (교직원 계정 등 학생이 아닌 구글 계정으로 로그인했을 때 로그인 상태가 계속 남지 않도록).
 async function afterGoogleLogin(email) {
   try {
     YEAR = await loadYear();
@@ -536,8 +542,8 @@ async function afterGoogleLogin(email) {
     const all = (await res.json()) || {};
     const match = Object.entries(all).find(([, s]) => String(s.email || '').toLowerCase() === email);
     if (!match) {
-      setLoginError('이 구글 계정과 연결된 학생 정보를 찾을 수 없습니다. 선생님께 문의해주세요.');
-      return;
+      setLoginError(`이 구글 계정(${email})과 연결된 학생 정보를 찾을 수 없습니다. 선생님께 문의해주세요.`);
+      return false;
     }
     const [sid, s] = match;
     student = { id: sid, name: s.name, grade: s.grade, ban: s.ban, num: s.num, email: s.email };
@@ -547,38 +553,79 @@ async function afterGoogleLogin(email) {
     document.getElementById('whoLabel').textContent = srWhoLabel(student);
     await loadAll();
     render();
+    return true;
   } catch (e) {
     setLoginError('로그인 처리 중 오류가 발생했습니다: ' + (e.message || e));
+    return false;
   }
 }
+window.afterGoogleLogin = afterGoogleLogin; // 아래 모듈 스크립트에서 호출
+</script>
 
-window.handleGoogleCredential = async function(response) {
-  setLoginError('');
-  try {
-    const idToken = response.credential;
-    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
-    const payload = await res.json();
-    if (!res.ok || payload.error) throw new Error('구글 인증에 실패했습니다.');
-    if (payload.aud !== GOOGLE_CLIENT_ID) throw new Error('잘못된 인증 정보입니다.');
-    if (payload.email_verified !== 'true' && payload.email_verified !== true) throw new Error('이메일이 인증되지 않은 계정입니다.');
-    const email = String(payload.email || '').toLowerCase();
-    await afterGoogleLogin(email);
-  } catch (e) {
-    setLoginError(e.message || '로그인 중 오류가 발생했습니다.');
+<!-- 이 프로젝트의 Firebase RTDB(gwangsu-on-default-rtdb)와 같은 Firebase 프로젝트에
+     이미 Google 로그인이 설정돼 있다(gwangsu-on 레포의 auth-gate.js와 동일한 설정을
+     그대로 재사용 — 별도로 새 OAuth 클라이언트를 만들 필요 없음). ddelza.github.io는
+     이미 그 프로젝트에서 gwangsu-on이 같은 호스트에서 서비스 중이라 승인된 도메인이다. -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+    getRedirectResult, onAuthStateChanged, signOut,
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_D2Wi944YQL-1rCdgeNU-tD8lpMek_wM",
+    authDomain: "gwangsu-on.firebaseapp.com",
+    databaseURL: "https://gwangsu-on-default-rtdb.firebaseio.com",
+    projectId: "gwangsu-on",
+    storageBucket: "gwangsu-on.firebasestorage.app",
+    messagingSenderId: "684885628658",
+    appId: "1:684885628658:web:b471726b604754a82b626b",
+    measurementId: "G-6X5DH4EP5N",
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ hd: "gwangsu.ms.kr" });
+
+  const btn = document.getElementById("gSignInBtn");
+
+  async function doSignIn() {
+    btn.disabled = true;
+    btn.textContent = "로그인 중...";
+    setLoginError("");
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      // 팝업이 막히는 환경(크롬북 정책, 인앱 브라우저 등)에서는 리디렉션 방식으로 재시도
+      if (err && (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request" || err.code === "auth/operation-not-supported-in-this-environment")) {
+        try { await signInWithRedirect(auth, provider); return; } catch (e2) { /* fallthrough */ }
+      }
+      setLoginError("로그인에 실패했습니다. 다시 시도해주세요.");
+      btn.disabled = false;
+      btn.textContent = "Google로 로그인";
+    }
   }
-};
+  btn.addEventListener("click", doSignIn);
 
-function initGoogleButton() {
-  if (typeof google === 'undefined' || !google.accounts) { setTimeout(initGoogleButton, 300); return; }
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGoogleCredential,
-    hd: 'gwangsu.ms.kr',
+  // 리디렉션 로그인 플로우가 이 페이지로 돌아왔을 때의 결과 처리(팝업 실패 폴백용)
+  getRedirectResult(auth).catch(() => {});
+
+  let handled = false;
+  onAuthStateChanged(auth, async (user) => {
+    if (!user || handled) return;
+    const email = String(user.email || "").toLowerCase();
+    const ok = await window.afterGoogleLogin(email);
+    if (ok) {
+      handled = true;
+    } else {
+      // 학생 명단과 매칭 안 되는 계정(교직원 등)이면 로그아웃시켜 다시 시도할 수 있게 한다
+      await signOut(auth);
+      btn.disabled = false;
+      btn.textContent = "Google로 로그인";
+    }
   });
-  google.accounts.id.renderButton(document.getElementById('gSignInBtn'), { theme: 'outline', size: 'large', width: 280, text: 'signin_with' });
-}
-
-window.addEventListener('DOMContentLoaded', initGoogleButton);
 </script>
 </body>
 </html>
