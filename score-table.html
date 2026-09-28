@@ -24,8 +24,31 @@ table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 
 .stcell.gray { background: var(--bg); color: var(--text-muted); }
 .stcell.green { background: var(--accent-soft); color: var(--accent); }
 .stcell.red { background: var(--danger-soft); color: var(--danger); }
-.stcell .cell-link { display: block; padding: 6px 8px; color: inherit; text-decoration: none; }
-.stcell .cell-link:hover { background: rgba(0,0,0,0.06); }
+.stcell .cell-btn { display: block; width: 100%; padding: 6px 8px; border: none; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.stcell .cell-btn:hover { background: rgba(0,0,0,0.06); }
+
+.hidden { display: none !important; }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-box { background: var(--surface); border-radius: 14px; padding: 20px; max-width: 320px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+.modal-title { font-size: 1rem; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+.modal-sub { font-size: 0.84rem; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5; }
+.modal-actions { display: flex; flex-direction: column; gap: 8px; }
+.modal-btn {
+  padding: 11px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer;
+}
+.modal-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.modal-btn.ghost { background: none; border: none; color: var(--text-muted); font-weight: 600; padding: 8px; }
+.modal-score-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.score-btn {
+  min-width: 40px; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface);
+  cursor: pointer; font-family: inherit; font-size: 0.88rem; font-weight: 700; color: var(--text);
+}
+.score-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.score-btn.clear-btn { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-soft); }
 </style>
 </head>
 <body>
@@ -52,6 +75,19 @@ table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 
     </div>
 
     <div id="tableWrap"><div class="loading-state">불러오는 중...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="cellModal">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-sub" id="modalSub"></div>
+    <div class="modal-score-row hidden" id="modalScoreButtons"></div>
+    <div class="modal-actions" id="modalActions">
+      <button type="button" class="modal-btn primary" onclick="modalGoToGrading()">채점 페이지로 이동</button>
+      <button type="button" class="modal-btn" onclick="modalShowEdit()">점수 수정</button>
+      <button type="button" class="modal-btn ghost" onclick="closeModal()">취소</button>
+    </div>
   </div>
 </div>
 
@@ -123,24 +159,85 @@ async function loadAll() {
 
 function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
 
-// 셀을 누르면 teacher.html의 "평가요소별 채점" 모드에서 바로 이 학생·항목으로 이동한다
-// (teacher.html의 applyDeepLinkIfAny()가 이 쿼리스트링을 읽어서 처리함). 모둠이 아예
-// 배정 안 된 학생(topicId 없음)은 채점 페이지에서 찾을 수 없으니 이동 링크를 만들지 않는다.
-function cellLink(topicId, studentId, ban, crit) {
-  if (!topicId) return null;
-  const params = new URLSearchParams({ ban: String(ban), crit: crit.key, topicId, studentId });
-  return `teacher.html?${params.toString()}`;
-}
-
 function scoreCell(topicId, studentId, ban, crit) {
   const rec = topicId ? ((gradingAll[topicId] || {})[studentId] || {}) : {};
   const val = rec[crit.key];
   const cls = (val === undefined || val === null) ? 'gray' : (Number(val) === crit.max ? 'green' : 'red');
   const display = (val === undefined || val === null) ? '–' : esc(val);
-  const url = cellLink(topicId, studentId, ban, crit);
-  const inner = url ? `<a class="cell-link" href="${escAttr(url)}" target="_blank" rel="noopener">${display}</a>` : display;
-  return `<td class="stcell ${cls}">${inner}</td>`;
+  // 모둠이 아예 배정 안 된 학생(topicId 없음)은 채점 자체가 불가능하니 눌러도 아무 일도
+  // 안 일어나게 그냥 텍스트로만 표시한다.
+  if (!topicId) return `<td class="stcell ${cls}">${display}</td>`;
+  return `<td class="stcell ${cls}"><button type="button" class="cell-btn" onclick="openCellModal('${topicId}','${studentId}','${escAttr(String(ban))}','${crit.key}')">${display}</button></td>`;
 }
+
+// ── 셀 클릭 팝업: "채점 페이지로 이동" 또는 "점수 수정"(그 자리에서 점수 고르거나 지우기) ──
+let modalCtx = null; // { topicId, studentId, ban, crit }
+
+window.openCellModal = function(topicId, studentId, ban, critKey) {
+  const crit = CRITERIA.find(c => c.key === critKey);
+  if (!crit) return;
+  modalCtx = { topicId, studentId, ban, crit };
+  const s = roster[studentId] || {};
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
+  const val = rec[crit.key];
+  document.getElementById('modalTitle').textContent = `${s.num ? s.num + '번 ' : ''}${s.name || studentId}`;
+  document.getElementById('modalSub').textContent = `${crit.label} · 현재 ${(val === undefined || val === null) ? '미채점' : val + ' / ' + crit.max + '점'}`;
+  document.getElementById('modalScoreButtons').classList.add('hidden');
+  document.getElementById('modalScoreButtons').innerHTML = '';
+  document.getElementById('modalActions').classList.remove('hidden');
+  document.getElementById('cellModal').classList.remove('hidden');
+};
+
+window.closeModal = function() {
+  document.getElementById('cellModal').classList.add('hidden');
+  modalCtx = null;
+};
+
+window.modalGoToGrading = function() {
+  if (!modalCtx) return;
+  const { topicId, studentId, ban, crit } = modalCtx;
+  const params = new URLSearchParams({ ban: String(ban), crit: crit.key, topicId, studentId });
+  window.open(`teacher.html?${params.toString()}`, '_blank', 'noopener');
+  closeModal();
+};
+
+window.modalShowEdit = function() {
+  if (!modalCtx) return;
+  const { topicId, studentId, crit } = modalCtx;
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
+  const current = rec[crit.key];
+  const btns = [];
+  for (let v = 0; v <= crit.max; v++) {
+    btns.push(`<button type="button" class="score-btn${Number(current) === v ? ' selected' : ''}" onclick="modalSaveScore(${v})">${v}</button>`);
+  }
+  btns.push(`<button type="button" class="score-btn clear-btn" onclick="modalDeleteScore()">지우기</button>`);
+  document.getElementById('modalScoreButtons').innerHTML = btns.join('');
+  document.getElementById('modalScoreButtons').classList.remove('hidden');
+  document.getElementById('modalActions').classList.add('hidden');
+};
+
+window.modalSaveScore = async function(value) {
+  if (!modalCtx) return;
+  const { topicId, studentId, crit } = modalCtx;
+  gradingAll[topicId] = gradingAll[topicId] || {};
+  gradingAll[topicId][studentId] = gradingAll[topicId][studentId] || {};
+  gradingAll[topicId][studentId][crit.key] = value;
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}.json`, {
+    method: 'PATCH', body: JSON.stringify({ [crit.key]: value, updatedAt: Date.now() }),
+  });
+  closeModal();
+  render();
+};
+
+window.modalDeleteScore = async function() {
+  if (!modalCtx) return;
+  const { topicId, studentId, crit } = modalCtx;
+  if (!confirm('이 점수를 지울까요? (미채점 상태로 되돌아갑니다)')) return;
+  if (gradingAll[topicId] && gradingAll[topicId][studentId]) delete gradingAll[topicId][studentId][crit.key];
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}/${crit.key}.json`, { method: 'DELETE' });
+  closeModal();
+  render();
+};
 
 function studentRowHtml(sid, s) {
   const fg = finalGroups[sid];
