@@ -191,8 +191,8 @@ const CRITERIA = [
   { key: 'q_reflect1', label: '⑦ 지식 내재화하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q1a', 'q1b']) },
   { key: 'q_reflect2', label: '⑧ 탐구 과정 및 논리 점검하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q2a', 'q2b', 'q2c', 'q2d', 'q2e', 'q2f']) },
   { key: 'q_reflect3', label: '⑨ 과학적 소양 및 삶과 연결하기', max: 2, min: 0, group: '성찰일지 작성하기 (6점)', scope: 'student', content: c => contentReflect(c, ['q3a', 'q3b']) },
-  { key: 'q_peer', label: '⑩ 동료에게 비판적 질문하기', max: 4, min: 0, note: '(원본상 1~4점만 확인됨, 체험 부스 수 기준)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => contentPeer(c) },
-  { key: 'q_concept', label: '⑪ 핵심 개념 구조화하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => '<div class="no-content">별도 페이지 예정 — 아직 디지털 제출 기록이 없습니다.</div>' },
+  { key: 'q_peer', label: '⑩ 동료에게 비판적 질문하기', max: 4, min: 0, note: '(원본상 1~4점만 확인됨, 체험 부스 수 기준)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => contentPeerMember(c) },
+  { key: 'q_concept', label: '⑪ 핵심 개념 구조화하기', max: 2, min: 0, note: '(원본상 1~2점만 확인됨 · 인상깊은 장면·알게 된 점으로 대신 확인)', group: '동료 비평 및 개념 구조화하기 (6점)', scope: 'student', content: c => contentPeerGroupImpression(c) },
 ];
 const CRIT_MAX_TOTAL = CRITERIA.reduce((s, c) => s + c.max, 0);
 
@@ -438,22 +438,19 @@ function contentReflect(c, keys) {
   return `<div class="cc-label">9차시 · 실전 성찰일지</div>${realHtml}` +
     (practiceHtml ? `<div class="cc-sublabel">참고: 8차시 연습 내용</div>${practiceHtml}` : '');
 }
-function contentPeer(c) {
+// ⑩ 동료에게 비판적 질문하기 — 내가 준 동료평가 중 "모둠원별 평가"(peerMember,
+// 발표자 개개인에게 남긴 개별 피드백)만 보여준다. 루브릭이 "체험한 부스 수" 기준으로
+// 채점하도록 돼 있어, 부스(모둠)별로 묶어서 몇 개 부스에 남겼는지 한눈에 보이게 한다.
+function contentPeerMember(c) {
   const given = [];
-  [[6, peerGroup6, peerMember6], [7, peerGroup7, peerMember7]].forEach(function([sess, pg, pm]) {
-    Object.entries(pg).forEach(function([targetTopicId, byEval]) {
-      const entry = (byEval || {})[c.studentId];
-      if (!entry) return;
-      // 문항①(모둠원별 평가)은 peerMember 쪽에 대상 학생별로 따로 저장돼 있으니,
-      // 이 학생이 그 모둠의 각 발표자에게 남긴 개별 평가도 함께 찾아서 보여준다.
-      const memberEvals = Object.entries((pm || {})[targetTopicId] || {}).map(function([targetStudentId, byEvaluator]) {
+  [[6, peerMember6], [7, peerMember7]].forEach(function([sess, pm]) {
+    Object.entries(pm).forEach(function([targetTopicId, byTarget]) {
+      const rows = Object.entries(byTarget).map(function([targetStudentId, byEvaluator]) {
         const e = (byEvaluator || {})[c.studentId];
         if (!e) return '';
         return `<div class="cc-own-item"><b>${esc(memberLabel(targetStudentId))}</b>: ${esc(e.text) || '<span class="cc-empty">(내용 없음)</span>'}</div>`;
       }).filter(Boolean).join('');
-      given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>` +
-        (memberEvals ? `<div class="cc-sublabel">모둠원별 평가</div>${memberEvals}` : '') +
-        `<div class="cc-sublabel">인상깊은 장면·알게 된 점</div>인상깊은 장면: ${esc(entry.scene) || '-'}<br>알게 된 점: ${esc(entry.learned) || '-'}`);
+      if (rows) given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>${rows}`);
     });
   });
   const received = [];
@@ -463,10 +460,26 @@ function contentPeer(c) {
       received.push(`<div class="cc-label">${sess}차시 · ${esc(entry.evaluatorName)}님이 남김</div>${esc(entry.text) || '<span class="cc-empty">(내용 없음)</span>'}`);
     });
   });
-  return `<div class="cc-label" style="font-size:0.78rem">▶ 내가 준 동료평가 (${given.length}건)</div>` +
-    (given.join('') || '<span class="cc-empty">(남긴 평가 없음)</span>') +
+  return `<div class="cc-label" style="font-size:0.78rem">▶ 내가 준 모둠원별 평가 (${given.length}개 부스)</div>` +
+    (given.join('') || '<span class="cc-empty">(모둠원별 평가를 남긴 부스 없음)</span>') +
     `<div class="cc-label" style="font-size:0.78rem;margin-top:10px">◀ 내가 받은 동료평가 (${received.length}건, 참고용)</div>` +
     (received.join('') || '<span class="cc-empty">(받은 평가 없음)</span>');
+}
+
+// ⑪ 핵심 개념 구조화하기 — 내가 준 동료평가 중 "인상깊은 장면·알게 된 점"(peerGroup,
+// 모둠 단위로 남긴 문항②③)을 대신 보여준다. 별도 개념 구조화 제출 페이지가 아직
+// 없어서, 부스를 돌며 정리한 이 내용을 채점 참고 자료로 쓴다.
+function contentPeerGroupImpression(c) {
+  const given = [];
+  [[6, peerGroup6], [7, peerGroup7]].forEach(function([sess, pg]) {
+    Object.entries(pg).forEach(function([targetTopicId, byEval]) {
+      const entry = (byEval || {})[c.studentId];
+      if (!entry) return;
+      given.push(`<div class="cc-label">${sess}차시 · ${esc(groupTitleOf(targetTopicId))}</div>인상깊은 장면: ${esc(entry.scene) || '-'}<br>알게 된 점: ${esc(entry.learned) || '-'}`);
+    });
+  });
+  return `<div class="cc-label" style="font-size:0.78rem">▶ 인상깊은 장면·알게 된 점 (${given.length}건)</div>` +
+    (given.join('') || '<span class="cc-empty">(작성된 내용 없음)</span>');
 }
 
 function memberLabel(studentId) {
