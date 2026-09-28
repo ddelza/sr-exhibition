@@ -658,12 +658,24 @@ async function saveScore(topicId, studentId, key, value) {
   });
 }
 
+async function deleteScore(topicId, studentId, key) {
+  if (gradingAll[topicId] && gradingAll[topicId][studentId]) delete gradingAll[topicId][studentId][key];
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}/${key}.json`, { method: 'DELETE' });
+}
+
 window.pickScore = function(topicId, studentId, key, value) {
-  saveScore(topicId, studentId, key, value);
+  // 이미 선택된 점수 버튼을 다시 누르면 그 항목을 미채점 상태로 되돌린다(토글).
+  const current = ((gradingAll[topicId] || {})[studentId] || {})[key];
+  const turningOff = Number(current) === value;
+  if (turningOff) {
+    deleteScore(topicId, studentId, key);
+  } else {
+    saveScore(topicId, studentId, key, value);
+  }
   const row = document.getElementById('scorerow-' + key);
   if (row) {
     row.querySelectorAll('.score-btn').forEach(function(btn) {
-      btn.classList.toggle('selected', Number(btn.dataset.val) === value);
+      btn.classList.toggle('selected', !turningOff && Number(btn.dataset.val) === value);
     });
   }
   updateTotalDisplay(topicId, studentId);

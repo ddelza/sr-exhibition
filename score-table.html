@@ -219,6 +219,14 @@ window.modalShowEdit = function() {
 window.modalSaveScore = async function(value) {
   if (!modalCtx) return;
   const { topicId, studentId, crit } = modalCtx;
+  // 이미 선택돼있던 점수를 다시 누르면 지우기와 동일하게 미채점 상태로 되돌린다(토글).
+  const current = ((gradingAll[topicId] || {})[studentId] || {})[crit.key];
+  if (Number(current) === value) {
+    await deleteScoreCore(topicId, studentId, crit.key);
+    closeModal();
+    render();
+    return;
+  }
   gradingAll[topicId] = gradingAll[topicId] || {};
   gradingAll[topicId][studentId] = gradingAll[topicId][studentId] || {};
   gradingAll[topicId][studentId][crit.key] = value;
@@ -229,12 +237,16 @@ window.modalSaveScore = async function(value) {
   render();
 };
 
+async function deleteScoreCore(topicId, studentId, key) {
+  if (gradingAll[topicId] && gradingAll[topicId][studentId]) delete gradingAll[topicId][studentId][key];
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}/${key}.json`, { method: 'DELETE' });
+}
+
 window.modalDeleteScore = async function() {
   if (!modalCtx) return;
   const { topicId, studentId, crit } = modalCtx;
   if (!confirm('이 점수를 지울까요? (미채점 상태로 되돌아갑니다)')) return;
-  if (gradingAll[topicId] && gradingAll[topicId][studentId]) delete gradingAll[topicId][studentId][crit.key];
-  await fetch(`${DB_URL}/years/${YEAR}/exhibition/grading/${topicId}/${studentId}/${crit.key}.json`, { method: 'DELETE' });
+  await deleteScoreCore(topicId, studentId, crit.key);
   closeModal();
   render();
 };
