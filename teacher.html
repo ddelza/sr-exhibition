@@ -626,8 +626,10 @@ function renderGroupPick() {
   }).join('') || '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
 }
 
-window.startAt = function(topicId) {
-  const idx = flatList.findIndex(x => x.topicId === topicId);
+window.startAt = function(topicId, studentId) {
+  const idx = studentId
+    ? flatList.findIndex(x => x.topicId === topicId && x.studentId === studentId)
+    : flatList.findIndex(x => x.topicId === topicId);
   ptr = idx === -1 ? 0 : idx;
   document.getElementById('graderWrap').style.display = 'block';
   renderGrader();
@@ -635,23 +637,11 @@ window.startAt = function(topicId) {
 
 window.goNext = async function() {
   if (ptr >= flatList.length - 1) { alert('이 반의 마지막 학생입니다. 다른 반을 선택해 이어서 채점하세요.'); return; }
-  const prev = flatList[ptr];
+  // 예전에는 같은 모둠으로 넘어갈 때 모둠 공통 항목(scope:'group') 점수를 다음 학생에게
+  // 자동으로 미리 채워넣었으나(버튼을 안 눌러도 복사됨), 교사가 채점하지 않은 학생에게
+  // 점수가 이미 들어가 있는 것처럼 보여 혼란을 준다는 피드백으로 이 자동복사를 없앴다.
+  // 모둠 전체에 같은 점수를 주고 싶으면 "이 점수를 모둠 전체에 복사" 버튼을 직접 눌러야 한다.
   ptr++;
-  const next = flatList[ptr];
-  if (next.topicId === prev.topicId) {
-    // 같은 모둠으로 넘어갈 때는, 모둠 공통 항목(scope:'group')을 이전 학생과 같은 점수로
-    // 미리 채워둔다 — 내용이 같은 모둠 항목을 매번 다시 클릭하지 않아도 되게 하기 위함.
-    // 이미 그 학생에게 입력된 값이 있으면 덮어쓰지 않는다.
-    const prevRec = (gradingAll[prev.topicId] || {})[prev.studentId] || {};
-    const nextRec = (gradingAll[next.topicId] || {})[next.studentId] || {};
-    const writes = [];
-    CRITERIA.forEach(function(c) {
-      if (c.scope === 'group' && prevRec[c.key] !== undefined && nextRec[c.key] === undefined) {
-        writes.push(saveScore(next.topicId, next.studentId, c.key, prevRec[c.key]));
-      }
-    });
-    await Promise.all(writes);
-  }
   renderGrader();
 };
 window.goPrev = function() {
@@ -769,6 +759,29 @@ function renderGrader() {
   }
 }
 
+// score-table.html의 셀을 클릭하면 teacher.html?ban=..&crit=..&topicId=..&studentId=..
+// 형태로 넘어온다 — 비밀번호 통과 후 데이터가 다 로드되면 그 학생·항목으로 바로 이동시킨다.
+function applyDeepLinkIfAny() {
+  const params = new URLSearchParams(location.search);
+  const qBan = params.get('ban');
+  const qTopicId = params.get('topicId');
+  const qStudentId = params.get('studentId');
+  const qCrit = params.get('crit');
+  if (!qBan || !qTopicId || !qStudentId) return;
+  selectedBan = qBan;
+  const banSelect = document.getElementById('banSelect');
+  if (banSelect) banSelect.value = qBan;
+  if (qCrit && CRITERIA.some(c => c.key === qCrit)) {
+    selectedCrit = qCrit;
+    const critSelect = document.getElementById('critSelect');
+    if (critSelect) critSelect.value = qCrit;
+    chooseMode('criterion');
+  } else {
+    chooseMode('student');
+  }
+  startAt(qTopicId, qStudentId);
+}
+
 async function init() {
   try {
     YEAR = await loadYear();
@@ -777,6 +790,7 @@ async function init() {
     renderBanSelect();
     document.getElementById('critSelect').innerHTML = CRITERIA.map(c => `<option value="${c.key}">${esc(c.label)} · 배점 0~${c.max}점 · ${esc(c.group)}</option>`).join('');
     document.getElementById('critSelect').dataset.filled = '1';
+    applyDeepLinkIfAny();
   } catch (e) {
     document.getElementById('groupPick').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
   }

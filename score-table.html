@@ -20,10 +20,12 @@ table.score-table td.id-cell, table.score-table th.id-cell { text-align: left; w
 table.score-table td.ban-cell { color: var(--text-muted); }
 table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 800; color: var(--accent); border-left: 2px solid var(--border); }
 
-.stcell { font-weight: 700; }
+.stcell { font-weight: 700; padding: 0 !important; }
 .stcell.gray { background: var(--bg); color: var(--text-muted); }
 .stcell.green { background: var(--accent-soft); color: var(--accent); }
 .stcell.red { background: var(--danger-soft); color: var(--danger); }
+.stcell .cell-link { display: block; padding: 6px 8px; color: inherit; text-decoration: none; }
+.stcell .cell-link:hover { background: rgba(0,0,0,0.06); }
 </style>
 </head>
 <body>
@@ -119,12 +121,25 @@ async function loadAll() {
   gradingAll = gradingRes || {};
 }
 
-function scoreCell(topicId, studentId, crit) {
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
+
+// 셀을 누르면 teacher.html의 "평가요소별 채점" 모드에서 바로 이 학생·항목으로 이동한다
+// (teacher.html의 applyDeepLinkIfAny()가 이 쿼리스트링을 읽어서 처리함). 모둠이 아예
+// 배정 안 된 학생(topicId 없음)은 채점 페이지에서 찾을 수 없으니 이동 링크를 만들지 않는다.
+function cellLink(topicId, studentId, ban, crit) {
+  if (!topicId) return null;
+  const params = new URLSearchParams({ ban: String(ban), crit: crit.key, topicId, studentId });
+  return `teacher.html?${params.toString()}`;
+}
+
+function scoreCell(topicId, studentId, ban, crit) {
   const rec = topicId ? ((gradingAll[topicId] || {})[studentId] || {}) : {};
   const val = rec[crit.key];
-  if (val === undefined || val === null) return '<td class="stcell gray">–</td>';
-  const cls = Number(val) === crit.max ? 'green' : 'red';
-  return `<td class="stcell ${cls}">${esc(val)}</td>`;
+  const cls = (val === undefined || val === null) ? 'gray' : (Number(val) === crit.max ? 'green' : 'red');
+  const display = (val === undefined || val === null) ? '–' : esc(val);
+  const url = cellLink(topicId, studentId, ban, crit);
+  const inner = url ? `<a class="cell-link" href="${escAttr(url)}" target="_blank" rel="noopener">${display}</a>` : display;
+  return `<td class="stcell ${cls}">${inner}</td>`;
 }
 
 function studentRowHtml(sid, s) {
@@ -135,7 +150,7 @@ function studentRowHtml(sid, s) {
   return `<tr>
     <td class="ban-cell">${esc(s.ban)}반</td>
     <td class="id-cell">${esc(s.num)}번 ${esc(s.name)}</td>
-    ${CRITERIA.map(c => scoreCell(topicId, sid, c)).join('')}
+    ${CRITERIA.map(c => scoreCell(topicId, sid, s.ban, c)).join('')}
     <td class="total-cell">${total} / ${CRIT_MAX_TOTAL}</td>
   </tr>`;
 }
