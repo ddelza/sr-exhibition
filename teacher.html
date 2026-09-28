@@ -57,6 +57,9 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .crit-content .cc-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin: 6px 0 2px; }
 .crit-content .cc-label:first-child { margin-top: 0; }
 .crit-content .cc-empty { color: var(--text-muted); }
+.crit-content .cc-tag { font-size: 0.68rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+.crit-content .cc-own-item { margin-bottom: 6px; }
+.crit-content .cc-own-item:last-child { margin-bottom: 0; }
 .crit-content .no-content { color: var(--text-muted); font-style: normal; }
 .block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 4px; }
 .block-table th, .block-table td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
@@ -335,13 +338,34 @@ function renderBlocksSection(topicId) {
   return sorted.map(renderBlockFull).join('');
 }
 
+// 1차시에는 학생이 개인별로 질문·가설을 여러 개(MAX_POSTS까지) 게시할 수 있고,
+// 모둠당 그중 하나만 지망신청·배정을 거쳐 최종 채택된다(그게 posts[topicId]).
+// 채점 화면에서는 모둠이 채택한 것과, 이 학생이 개인적으로 작성했던 것을 모두 보여줘야
+// 채택되지 않은 학생의 개인 기여도도 평가할 수 있다.
+function myOwnPosts(studentId) {
+  return Object.entries(posts)
+    .filter(([, p]) => p.id === studentId)
+    .sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+}
 function contentQuestion(c) {
-  return `<div>${esc((c.post || {}).question) || '<span class="cc-empty">(작성 없음)</span>'}</div>`;
+  const adopted = `<div class="cc-label">모둠 채택 질문</div><div>${esc((c.post || {}).question) || '<span class="cc-empty">(작성 없음)</span>'}</div>`;
+  const mine = myOwnPosts(c.studentId);
+  const ownHtml = mine.length
+    ? mine.map(([pid, p]) => `<div class="cc-own-item">${esc(p.question)}${pid === c.topicId ? '<span class="cc-tag">모둠 채택 질문과 동일</span>' : ''}</div>`).join('')
+    : '<span class="cc-empty">(작성 없음)</span>';
+  return adopted + `<div class="cc-label">본인이 작성한 개인 질문${mine.length ? ` (${mine.length}개)` : ''}</div>${ownHtml}`;
 }
 function contentHypo(c) {
   const p = c.post || {};
-  if (!p.hypothesis && !p.iv && !p.dv) return '<span class="cc-empty">(작성 없음)</span>';
-  return `<div><b>독립변인</b> ${esc(p.iv)} · <b>종속변인</b> ${esc(p.dv)}<br>${esc(p.hypothesis)}</div>`;
+  const adoptedHtml = (!p.hypothesis && !p.iv && !p.dv)
+    ? '<span class="cc-empty">(작성 없음)</span>'
+    : `<div><b>독립변인</b> ${esc(p.iv)} · <b>종속변인</b> ${esc(p.dv)}<br>${esc(p.hypothesis)}</div>`;
+  const adopted = `<div class="cc-label">모둠 채택 가설·변인</div>${adoptedHtml}`;
+  const mine = myOwnPosts(c.studentId);
+  const ownHtml = mine.length
+    ? mine.map(([pid, p2]) => `<div class="cc-own-item"><b>독립변인</b> ${esc(p2.iv)} · <b>종속변인</b> ${esc(p2.dv)}<br>${esc(p2.hypothesis)}${pid === c.topicId ? '<span class="cc-tag">모둠 채택 질문과 동일</span>' : ''}</div>`).join('')
+    : '<span class="cc-empty">(작성 없음)</span>';
+  return adopted + `<div class="cc-label">본인이 작성한 개인 가설·변인${mine.length ? ` (${mine.length}개)` : ''}</div>${ownHtml}`;
 }
 function contentProcedure(c) {
   const items = s2Items[c.topicId] || {};
