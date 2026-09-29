@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>학생 점수표 — 자극과 반응 전람회</title>
 <link rel="stylesheet" href="common.css">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
 .wrap { max-width: 1100px; }
 .summary-line { font-size: 0.85rem; color: var(--text-muted); margin: 4px 0 14px; }
@@ -72,6 +73,10 @@ table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 
     <div class="who-banner">
       <span>학생 점수표</span>
       <div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher9.html">9차시 관리</a><a href="teacher_video.html">발표 영상 등록</a><a href="teacher-status.html">전체 진행현황</a><a href="teacher.html">전람회 채점</a></div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+      <button type="button" class="btn small secondary" onclick="downloadExcel()">📥 Excel로 다운로드</button>
     </div>
 
     <div id="tableWrap"><div class="loading-state">불러오는 중...</div></div>
@@ -159,11 +164,16 @@ async function loadAll() {
 
 function escAttr(str) { return esc(str).replace(/"/g, '&quot;'); }
 
+// 화면 표(HTML)와 엑셀 내보내기가 같은 채점 상태 판정을 쓰도록 공유한다.
+function cellStatus(val, max) {
+  if (val === undefined || val === null) return { cls: 'gray', display: '–' };
+  return { cls: Number(val) === max ? 'green' : 'red', display: String(val) };
+}
+
 function scoreCell(topicId, studentId, ban, crit) {
   const rec = topicId ? ((gradingAll[topicId] || {})[studentId] || {}) : {};
   const val = rec[crit.key];
-  const cls = (val === undefined || val === null) ? 'gray' : (Number(val) === crit.max ? 'green' : 'red');
-  const display = (val === undefined || val === null) ? '–' : String(val);
+  const { cls, display } = cellStatus(val, crit.max);
   // 모둠이 아예 배정 안 된 학생(topicId 없음)은 채점 자체가 불가능하니 눌러도 아무 일도
   // 안 일어나게 그냥 텍스트로만 표시한다.
   if (!topicId) return `<td class="stcell ${cls}">${display}</td>`;
@@ -308,6 +318,88 @@ async function init() {
     document.getElementById('tableWrap').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
   }
 }
+
+// ── Excel 다운로드 ────────────────────────────────────────
+window.downloadExcel = async function() {
+  if (typeof ExcelJS === 'undefined') {
+    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+  const students = Object.entries(roster).sort((a, b) => {
+    const ba = a[1].ban || 0, bb = b[1].ban || 0;
+    if (ba !== bb) return ba - bb;
+    return (a[1].num || 0) - (b[1].num || 0);
+  });
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('학생 점수표');
+
+  const headerLabels = ['반', '번호', '이름', ...CRITERIA.map(c => `${c.label} (${c.max}점)`), '합계'];
+  ws.addRow(headerLabels);
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell(cell => {
+    cell.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  });
+  headerRow.height = 40;
+
+  const fillOf = { gray: 'FFE7E6E6', green: 'FFC6EFCE', red: 'FFFFC7CE' };
+  const fontOf = {
+    gray: { name: 'Arial', color: { argb: 'FF808080' } },
+    green: { name: 'Arial', bold: true, color: { argb: 'FF006100' } },
+    red: { name: 'Arial', bold: true, color: { argb: 'FF9C0006' } },
+  };
+
+  students.forEach(([sid, s]) => {
+    const fg = finalGroups[sid];
+    const topicId = fg ? fg.topicId : null;
+    const rec = topicId ? ((gradingAll[topicId] || {})[sid] || {}) : {};
+    let total = 0;
+    const clsList = [];
+    const rowValues = [s.ban, s.num, s.name];
+    CRITERIA.forEach(c => {
+      const val = rec[c.key];
+      const { cls, display } = cellStatus(val, c.max);
+      clsList.push(cls);
+      rowValues.push(display);
+      if (cls !== 'gray') total += Number(val);
+    });
+    rowValues.push(total);
+
+    const row = ws.addRow(rowValues);
+    row.font = { name: 'Arial' };
+    row.alignment = { horizontal: 'center' };
+    row.getCell(3).alignment = { horizontal: 'left' };
+    clsList.forEach((cls, i) => {
+      const cell = row.getCell(4 + i);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillOf[cls] } };
+      cell.font = fontOf[cls];
+      cell.alignment = { horizontal: 'center' };
+    });
+    row.getCell(headerLabels.length).font = { name: 'Arial', bold: true };
+  });
+
+  ws.columns = [
+    { width: 6 }, { width: 7 }, { width: 11 },
+    ...CRITERIA.map(() => ({ width: 15 })),
+    { width: 10 },
+  ];
+  ws.views = [{ state: 'frozen', ySplit: 1, xSplit: 3 }];
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const today = new Date();
+  const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `학생점수표_${ymd}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 // 다른 화면(전람회 채점 등)에서 방금 매긴 점수도 새로고침 없이 보이도록 8초마다 갱신한다.
 // 점수 수정 모달이 열려 있는 동안은 화면이 갑자기 바뀌면 헷갈리니 그 사이엔 건너뛴다.
