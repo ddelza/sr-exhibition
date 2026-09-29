@@ -163,7 +163,7 @@ function scoreCell(topicId, studentId, ban, crit) {
   const rec = topicId ? ((gradingAll[topicId] || {})[studentId] || {}) : {};
   const val = rec[crit.key];
   const cls = (val === undefined || val === null) ? 'gray' : (Number(val) === crit.max ? 'green' : 'red');
-  const display = (val === undefined || val === null) ? '–' : esc(val);
+  const display = (val === undefined || val === null) ? '–' : String(val);
   // 모둠이 아예 배정 안 된 학생(topicId 없음)은 채점 자체가 불가능하니 눌러도 아무 일도
   // 안 일어나게 그냥 텍스트로만 표시한다.
   if (!topicId) return `<td class="stcell ${cls}">${display}</td>`;
