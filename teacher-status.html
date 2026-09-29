@@ -190,8 +190,9 @@ window.onBanChange = function() {
 
 function s2Count(topicId) {
   if (!topicId) return 0;
+  const items = (s2Data.items || {})[topicId] || {};
   let n = 0;
-  S2_FIELDS.forEach(f => { n += Object.keys(((s2Data[f] || {})[topicId]) || {}).length; });
+  S2_FIELDS.forEach(f => { n += Object.keys(items[f] || {}).length; });
   return n;
 }
 function s3BlockCount(topicId) {
