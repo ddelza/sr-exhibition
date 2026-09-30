@@ -31,12 +31,23 @@ table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 
 .dist-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-top: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .dist-card h2 { font-size: 0.95rem; margin: 0 0 4px; }
 .dist-sub { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px; }
-.dist-chart { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding: 0 4px; }
-.dist-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.dist-chart { display: flex; align-items: flex-end; gap: 14px; height: 150px; padding: 0 4px; overflow-x: auto; }
+.dist-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 44px; }
 .dist-bar-count { font-size: 0.78rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; min-height: 1em; }
 .dist-bar-count.zero { color: var(--text-muted); font-weight: 400; }
-.dist-bar { width: 100%; max-width: 52px; background: var(--accent); border-radius: 6px 6px 0 0; min-height: 3px; }
+.dist-bar-row { width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 3px; }
+.dist-bar {
+  width: 100%; max-width: 52px; height: 100%; background: var(--accent); border-radius: 6px 6px 0 0; min-height: 3px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
 .dist-bar.zero { background: var(--bg); min-height: 2px; }
+.dist-seg { width: 100%; }
+.dist-seg.has-line { border-top: 1.5px solid rgba(255,255,255,0.55); }
+.dist-ban-nums { position: relative; width: 14px; height: 100%; flex: 0 0 auto; }
+.dist-ban-num {
+  position: absolute; left: 0; transform: translateY(50%); font-size: 0.64rem; font-weight: 700;
+  color: var(--text-muted); line-height: 1; white-space: nowrap;
+}
 .dist-bar-label { font-size: 0.74rem; color: var(--text-muted); margin-top: 8px; text-align: center; white-space: nowrap; }
 
 .hidden { display: none !important; }
@@ -311,26 +322,53 @@ const DIST_BUCKETS = [
 function distributionHtml(students) {
   const started = [];
   let notStarted = 0;
-  students.forEach(([sid]) => {
+  students.forEach(([sid, s]) => {
     const rec = recordOf(sid);
-    if (gradedCountOf(rec) > 0) started.push(totalOf(rec));
+    if (gradedCountOf(rec) > 0) started.push({ total: totalOf(rec), ban: String(s.ban) });
     else notStarted++;
   });
-  const counts = DIST_BUCKETS.map(b => started.filter(t => t >= b.min && t <= b.max).length);
-  const maxCount = Math.max(1, ...counts);
+  const buckets = DIST_BUCKETS.map(b => started.filter(x => x.total >= b.min && x.total <= b.max));
+  const maxCount = Math.max(1, ...buckets.map(arr => arr.length));
+
   const bars = DIST_BUCKETS.map((b, i) => {
-    const n = counts[i];
+    const items = buckets[i];
+    const n = items.length;
     const heightPct = n === 0 ? 0 : Math.max(6, Math.round(n / maxCount * 100));
+
+    // 반별 인원수를 집계해, 해당 반 비율만큼 막대 안쪽을 나눠 구분선을 긋는다.
+    // 위(=높은 반)부터 DOM에 쌓아서 1반이 가장 아래에 오게 한다.
+    const byBan = {};
+    items.forEach(x => { byBan[x.ban] = (byBan[x.ban] || 0) + 1; });
+    const bansDesc = Object.keys(byBan).sort((a, c) => c.localeCompare(a, 'ko', { numeric: true }));
+    const segmentsHtml = bansDesc.map((ban, idx) => {
+      const segPct = (byBan[ban] / n) * 100;
+      return `<div class="dist-seg${idx === 0 ? '' : ' has-line'}" style="height:${segPct}%" title="${esc(ban)}반 ${byBan[ban]}명"></div>`;
+    }).join('');
+
+    // 막대 오른쪽에 작은 숫자로 각 구간이 몇 반인지 표시 (아래서부터 1반 순서, 그 반 인원이
+    // 0명이면 숫자를 아예 찍지 않는다). bottom%는 그 반 구간의 세로 중앙 위치.
+    const bansAsc = Object.keys(byBan).sort((a, c) => a.localeCompare(c, 'ko', { numeric: true }));
+    let cum = 0;
+    const numLabels = bansAsc.map(ban => {
+      const pct = (byBan[ban] / n) * 100;
+      const center = cum + pct / 2;
+      cum += pct;
+      return `<span class="dist-ban-num" style="bottom:${center}%">${esc(ban)}</span>`;
+    }).join('');
+
     return `<div class="dist-bar-wrap">
       <div class="dist-bar-count${n === 0 ? ' zero' : ''}">${n}</div>
-      <div class="dist-bar${n === 0 ? ' zero' : ''}" style="height:${heightPct}%"></div>
+      <div class="dist-bar-row" style="height:${heightPct}%">
+        <div class="dist-bar${n === 0 ? ' zero' : ''}">${segmentsHtml}</div>
+        <div class="dist-ban-nums">${numLabels}</div>
+      </div>
       <div class="dist-bar-label">${esc(b.label).replace('\n', '<br>')}</div>
     </div>`;
   }).join('');
 
   return `<div class="dist-card">
     <h2>📊 점수 분포 (합계 기준)</h2>
-    <div class="dist-sub">채점이 진행된 ${started.length}명 기준${notStarted ? ` · 아직 채점 시작 전인 ${notStarted}명은 제외` : ''}</div>
+    <div class="dist-sub">채점이 진행된 ${started.length}명 기준${notStarted ? ` · 아직 채점 시작 전인 ${notStarted}명은 제외` : ''} · 막대 안 구분선은 반 경계(위에서부터 낮은 반 순)</div>
     <div class="dist-chart">${bars}</div>
   </div>`;
 }
