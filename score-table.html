@@ -28,6 +28,17 @@ table.score-table td.total-cell, table.score-table th.total-cell { font-weight: 
 .stcell .cell-btn { display: block; width: 100%; padding: 6px 8px; border: none; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
 .stcell .cell-btn:hover { background: rgba(0,0,0,0.06); }
 
+.dist-card { background: var(--surface); border-radius: 14px; padding: 16px 18px; margin-top: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.dist-card h2 { font-size: 0.95rem; margin: 0 0 4px; }
+.dist-sub { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px; }
+.dist-chart { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding: 0 4px; }
+.dist-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.dist-bar-count { font-size: 0.78rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; min-height: 1em; }
+.dist-bar-count.zero { color: var(--text-muted); font-weight: 400; }
+.dist-bar { width: 100%; max-width: 52px; background: var(--accent); border-radius: 6px 6px 0 0; min-height: 3px; }
+.dist-bar.zero { background: var(--bg); min-height: 2px; }
+.dist-bar-label { font-size: 0.74rem; color: var(--text-muted); margin-top: 8px; text-align: center; white-space: nowrap; }
+
 .hidden { display: none !important; }
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999;
@@ -261,17 +272,67 @@ window.modalDeleteScore = async function() {
   render();
 };
 
+function recordOf(sid) {
+  const fg = finalGroups[sid];
+  const topicId = fg ? fg.topicId : null;
+  return topicId ? ((gradingAll[topicId] || {})[sid] || {}) : {};
+}
+function totalOf(rec) {
+  return CRITERIA.reduce((sum, c) => sum + (Number(rec[c.key]) || 0), 0);
+}
+function gradedCountOf(rec) {
+  return CRITERIA.filter(c => rec[c.key] !== undefined && rec[c.key] !== null).length;
+}
+
 function studentRowHtml(sid, s) {
   const fg = finalGroups[sid];
   const topicId = fg ? fg.topicId : null;
-  const rec = topicId ? ((gradingAll[topicId] || {})[sid] || {}) : {};
-  const total = CRITERIA.reduce((sum, c) => sum + (Number(rec[c.key]) || 0), 0);
+  const rec = recordOf(sid);
+  const total = totalOf(rec);
   return `<tr>
     <td class="ban-cell">${esc(s.ban)}반</td>
     <td class="id-cell">${esc(s.num)}번 ${esc(s.name)}</td>
     ${CRITERIA.map(c => scoreCell(topicId, sid, s.ban, c)).join('')}
     <td class="total-cell">${total} / ${CRIT_MAX_TOTAL}</td>
   </tr>`;
+}
+
+// ── 점수 분포 막대그래프 (합계 기준) ────────────────────────
+// 채점이 하나도 안 된 학생을 0점 구간에 그대로 넣으면 분포가 크게 왜곡되므로,
+// 채점이 1개라도 진행된 학생만 집계하고 나머지는 "미채점" 인원으로 따로 안내한다.
+const DIST_BUCKETS = [
+  { label: '0~4', min: 0, max: 4 },
+  { label: '5~9', min: 5, max: 9 },
+  { label: '10~14', min: 10, max: 14 },
+  { label: '15~19', min: 15, max: 19 },
+  { label: '20~24', min: 20, max: 24 },
+  { label: '25\n(만점)', min: 25, max: 25 },
+];
+function distributionHtml(students) {
+  const started = [];
+  let notStarted = 0;
+  students.forEach(([sid]) => {
+    const rec = recordOf(sid);
+    if (gradedCountOf(rec) > 0) started.push(totalOf(rec));
+    else notStarted++;
+  });
+  const counts = DIST_BUCKETS.map(b => started.filter(t => t >= b.min && t <= b.max).length);
+  const maxCount = Math.max(1, ...counts);
+  const bars = DIST_BUCKETS.map((b, i) => {
+    const n = counts[i];
+    const heightPct = n === 0 ? 0 : Math.max(6, Math.round(n / maxCount * 100));
+    return `<div class="dist-bar-wrap">
+      <div class="dist-bar-count${n === 0 ? ' zero' : ''}">${n}</div>
+      <div class="dist-bar${n === 0 ? ' zero' : ''}" style="height:${heightPct}%"></div>
+      <div class="dist-bar-label">${esc(b.label).replace('\n', '<br>')}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="dist-card">
+    <h2>📊 점수 분포 (합계 기준)</h2>
+    <div class="dist-sub">채점이 진행된 ${started.length}명 기준${notStarted ? ` · 아직 채점 시작 전인 ${notStarted}명은 제외` : ''}</div>
+    <div class="dist-chart">${bars}</div>
+  </div>`;
 }
 
 function render() {
@@ -305,7 +366,7 @@ function render() {
       </tr>
     </thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table></div>` + distributionHtml(students);
 }
 
 async function init() {
