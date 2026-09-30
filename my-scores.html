@@ -402,7 +402,9 @@ function contentProcedure(c) {
   const parts = S2_FIELD_LABELS.map(function([key, label]) {
     const list = Object.values(items[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     if (!list.length) return '';
-    return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => esc(it.text)).join(', ');
+    // 실험과정은 순서가 있는 단계이므로 쉼표로 이어붙이지 않고 줄바꿈해서 보여준다.
+    const sep = key === 'steps' ? '<br>' : ', ';
+    return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => esc(it.text)).join(sep);
   }).filter(Boolean).join('');
   const myItemsParts = S2_FIELD_LABELS.map(function([key, label]) {
     const list = Object.values(items[key] || {}).filter(it => it.author === c.studentId).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
