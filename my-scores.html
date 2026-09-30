@@ -50,7 +50,8 @@
 .crit-content .cc-own-item:last-child { margin-bottom: 0; }
 .crit-content .cc-sublabel { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); margin: 6px 0 2px; }
 .crit-content .no-content { color: var(--text-muted); font-style: normal; }
-.block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 4px; }
+.table-scroll-x { overflow-x: auto; margin-top: 4px; }
+.block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 .block-table th, .block-table td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
 
 .rendered-block { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
@@ -65,6 +66,50 @@
 .rendered-block .legend-swatch { width: 16px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
 .canva-link-box { margin-top: 10px; }
 .canva-link-box a { color: var(--accent); font-weight: 700; word-break: break-all; }
+
+@media (max-width: 640px) {
+  .header h1 { font-size: 1.35rem; }
+  .header p { font-size: 0.92rem; line-height: 1.5; }
+  .who-banner { font-size: 0.95rem; }
+
+  .g-login-card { padding: 32px 18px; }
+  .g-login-card h2 { font-size: 1.15rem; }
+  .g-login-card p { font-size: 0.92rem; }
+  #gSignInBtn { padding: 14px 22px; font-size: 1.02rem; }
+  .g-login-note { font-size: 0.84rem; }
+
+  .student-banner { padding: 14px 16px; }
+  .student-banner .sb-name { font-size: 1.25rem; }
+  .student-banner .sb-group { font-size: 0.95rem; }
+
+  .total-bar { font-size: 1.02rem; padding: 12px 16px; }
+  .total-bar .total-score { font-size: 1.35rem; }
+
+  .summary-card table { font-size: 0.95rem; }
+  .summary-card td { padding: 9px 4px; }
+
+  .crit-card { padding: 18px 18px; }
+  .crit-card .crit-group { font-size: 0.82rem; }
+  .crit-card h3 { font-size: 1.12rem; }
+
+  .score-pill { font-size: 0.92rem; padding: 6px 14px; }
+  .teacher-feedback { font-size: 0.95rem; padding: 10px 14px; }
+
+  .crit-content { font-size: 0.98rem; line-height: 1.65; padding: 12px 14px; }
+  .crit-content .cc-label { font-size: 0.85rem; }
+  .crit-content .cc-sublabel { font-size: 0.82rem; }
+  .crit-content .cc-tag { font-size: 0.78rem; }
+  .crit-content .no-content { font-size: 0.95rem; }
+
+  .block-table { font-size: 0.92rem; }
+  .block-table th, .block-table td { padding: 6px 8px; }
+
+  .rendered-block .rb-type { font-size: 0.82rem; }
+  .rendered-block .block-title { font-size: 1rem; }
+  .rendered-block .block-caption { font-size: 0.86rem; }
+  .rendered-block .block-text { font-size: 0.95rem; }
+  .rendered-block .chart-legend { font-size: 0.85rem; }
+}
 </style>
 </head>
 <body>
@@ -259,16 +304,16 @@ function renderBlockFull(b) {
     inner = renderChartSVG(b) + chartLegendHtml(b) + '<div class="block-caption">' + esc(b.xLabel || 'x') + ' / ' + esc(b.yLabel || 'y') + (b.chartType === 'bar' ? ' · 막대그래프' : ' · 선그래프') + '</div>';
   } else if (b.type === 'resultsTable') {
     const rows = b.rows || [];
-    inner = '<table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' + (rows.map(function(r) { return '<tr><td>' + esc(r.condition) + '</td><td>' + esc(r.result) + '</td></tr>'; }).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table>';
+    inner = '<div class="table-scroll-x"><table class="block-table"><tr><th>실험 조건</th><th>실험 결과</th></tr>' + (rows.map(function(r) { return '<tr><td>' + esc(r.condition) + '</td><td>' + esc(r.result) + '</td></tr>'; }).join('') || '<tr><td colspan="2">내용 없음</td></tr>') + '</table></div>';
   } else if (b.type === 'freeTable') {
     const rowsN = b.rows || 0, colsN = b.cols || 0, cells = b.cells || {};
-    let t = '<table class="block-table">';
+    let t = '<div class="table-scroll-x"><table class="block-table">';
     for (let r = 0; r < rowsN; r++) {
       t += '<tr>';
       for (let c = 0; c < colsN; c++) t += '<td>' + esc(cells[r + '-' + c] || '') + '</td>';
       t += '</tr>';
     }
-    inner = t + '</table>';
+    inner = t + '</table></div>';
   } else if (b.type === 'link') {
     inner = '<a href="' + escAttr(b.url || '#') + '" target="_blank" rel="noopener">' + esc(b.description || b.url || '(링크 없음)') + '</a>';
   } else if (b.type === 'text') {
