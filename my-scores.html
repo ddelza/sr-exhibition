@@ -37,6 +37,10 @@
 .score-pill { display: inline-block; font-size: 0.82rem; font-weight: 800; border-radius: 999px; padding: 4px 12px; margin-bottom: 10px; }
 .score-pill.done { background: var(--accent-soft); color: var(--accent); }
 .score-pill.pending { background: var(--bg); color: var(--text-muted); }
+.teacher-feedback {
+  background: #fff6d0; color: #7a5c00; border-radius: 10px; padding: 8px 12px;
+  font-size: 0.84rem; line-height: 1.5; margin-bottom: 10px; white-space: pre-wrap;
+}
 .crit-content { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.84rem; line-height: 1.55; color: var(--text); }
 .crit-content .cc-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin: 6px 0 2px; }
 .crit-content .cc-label:first-child { margin-top: 0; }
@@ -103,6 +107,7 @@ let reflection9BySid = {}; // 9차시 실전 성찰일지(구글 설문) 응답 
 let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {}, peerMember6 = {}, peerMember7 = {};
 let s6Wrapup = {}, s7Wrapup = {};
 let gradingAll = {};
+let feedbackAll = {}; // topicId -> studentId -> critKey -> {text, updatedAt} — 선생님이 남긴 코멘트
 
 function esc(str) {
   if (!str) return '';
@@ -420,11 +425,17 @@ function memberLabel(studentId) {
 }
 
 // ── 점수 표시(읽기 전용) ──────────────────────────────
+function teacherFeedbackHtml(topicId, studentId, crit) {
+  const fb = ((feedbackAll[topicId] || {})[studentId] || {})[crit.key];
+  if (!fb || !fb.text) return '';
+  return `<div class="teacher-feedback">💬 선생님 코멘트: ${esc(fb.text)}</div>`;
+}
 function scoreDisplayHtml(topicId, studentId, crit) {
   const rec = (gradingAll[topicId] || {})[studentId] || {};
   const val = rec[crit.key];
-  if (val === undefined || val === null) return `<div class="score-pill pending">아직 채점되지 않았어요</div>`;
-  return `<div class="score-pill done">${val} / ${crit.max}점</div>`;
+  const fbHtml = teacherFeedbackHtml(topicId, studentId, crit);
+  if (val === undefined || val === null) return `<div class="score-pill pending">아직 채점되지 않았어요</div>${fbHtml}`;
+  return `<div class="score-pill done">${val} / ${crit.max}점</div>${fbHtml}`;
 }
 function scoreSummaryHtml(topicId, studentId) {
   const rec = (gradingAll[topicId] || {})[studentId] || {};
@@ -474,7 +485,7 @@ async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
   const s3 = `${DB_URL}/years/${YEAR}/exhibition/s3`;
-  const [rosterRes, fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, pm6, pm7, w6, w7, cl, gr, ref9] = await Promise.all([
+  const [rosterRes, fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, pm6, pm7, w6, w7, cl, gr, ref9, fb] = await Promise.all([
     fetch(`${DB_URL}/years/${YEAR}/students.json`).then(r => r.json()),
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
@@ -494,6 +505,7 @@ async function loadAll() {
     fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/canvaLink.json`).then(r => r.json()),
     fetch(`${DB_URL}/years/${YEAR}/exhibition/grading.json`).then(r => r.json()),
     loadReflections9(),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/gradingFeedback.json`).then(r => r.json()),
   ]);
   const allRoster = rosterRes || {};
   roster = {};
@@ -516,6 +528,7 @@ async function loadAll() {
   s7Wrapup = w7 || {};
   s4CanvaLink = cl || {};
   gradingAll = gr || {};
+  feedbackAll = fb || {};
 }
 
 function render() {

@@ -47,12 +47,24 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
 .crit-card .crit-group { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); margin-bottom: 2px; }
 .crit-card h3 { font-size: 0.94rem; margin: 0 0 4px; }
 .crit-card .crit-range { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 10px; }
-.score-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.score-feedback-row { display: flex; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; align-items: flex-start; }
+.score-row { display: flex; gap: 6px; flex-wrap: wrap; flex: 0 0 auto; }
 .score-btn {
   min-width: 40px; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface);
   cursor: pointer; font-family: inherit; font-size: 0.88rem; font-weight: 700; color: var(--text);
 }
 .score-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.feedback-box { flex: 1 1 220px; min-width: 200px; }
+.feedback-box textarea {
+  width: 100%; min-height: 52px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px;
+  font-family: inherit; font-size: 0.84rem; color: var(--text); background: var(--surface); resize: vertical; box-sizing: border-box;
+}
+.feedback-box .fb-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.feedback-box .fb-save-btn {
+  padding: 5px 12px; border: none; border-radius: 7px; background: var(--accent); color: #fff;
+  font-family: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+}
+.feedback-box .fb-status { font-size: 0.74rem; color: var(--accent); }
 .crit-content { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 0.84rem; line-height: 1.55; color: var(--text); }
 .crit-content .cc-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); margin: 6px 0 2px; }
 .crit-content .cc-label:first-child { margin-top: 0; }
@@ -114,6 +126,12 @@ select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10
   .crit-card .crit-range { font-size: 0.88rem; }
 
   .score-btn { min-width: 52px; padding: 12px 16px; font-size: 1.05rem; }
+
+  .score-feedback-row { flex-direction: column; }
+  .feedback-box { flex-basis: auto; width: 100%; }
+  .feedback-box textarea { font-size: 0.98rem; min-height: 60px; }
+  .feedback-box .fb-save-btn { padding: 8px 14px; font-size: 0.88rem; }
+  .feedback-box .fb-status { font-size: 0.84rem; }
 
   .crit-content { font-size: 0.98rem; line-height: 1.65; padding: 12px 14px; }
   .crit-content .cc-label { font-size: 0.85rem; }
@@ -195,6 +213,7 @@ let reflection9BySid = {}; // 9차시 실전 성찰일지(구글 설문) 응답 
 let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {}, peerMember6 = {}, peerMember7 = {};
 let s6Wrapup = {}, s7Wrapup = {};
 let gradingAll = {}; // topicId -> studentId -> {q_*, updatedAt}
+let feedbackAll = {}; // topicId -> studentId -> critKey -> {text, updatedAt} — 학생 점수조회 페이지에 코멘트로 노출됨
 let selectedBan = '';
 let mode = null; // 'student' | 'criterion'
 let selectedCrit = null;
@@ -559,7 +578,7 @@ async function loadAll() {
   const s1 = `${DB_URL}/years/${YEAR}/exhibition/s1`;
   const s2 = `${DB_URL}/years/${YEAR}/exhibition/s2`;
   const s3 = `${DB_URL}/years/${YEAR}/exhibition/s3`;
-  const [fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, pm6, pm7, w6, w7, cl, gr, ref9] = await Promise.all([
+  const [fg, p, pref, tt, it, bl, sm, rf, pr, pg6, pg7, pm6, pm7, w6, w7, cl, gr, ref9, fb] = await Promise.all([
     fetch(`${s1}/finalGroups.json`).then(r => r.json()),
     fetch(`${s1}/posts.json`).then(r => r.json()),
     fetch(`${s1}/preferences.json`).then(r => r.json()),
@@ -578,6 +597,7 @@ async function loadAll() {
     fetch(`${DB_URL}/years/${YEAR}/exhibition/s4/canvaLink.json`).then(r => r.json()),
     fetch(`${DB_URL}/years/${YEAR}/exhibition/grading.json`).then(r => r.json()),
     loadReflections9(),
+    fetch(`${DB_URL}/years/${YEAR}/exhibition/gradingFeedback.json`).then(r => r.json()),
   ]);
   finalGroups = fg || {};
   posts = p || {};
@@ -597,6 +617,7 @@ async function loadAll() {
   s7Wrapup = w7 || {};
   s4CanvaLink = cl || {};
   gradingAll = gr || {};
+  feedbackAll = fb || {};
 }
 
 async function loadRoster() {
@@ -757,13 +778,49 @@ function scoreRowHtml(topicId, studentId, crit) {
   return `<div class="score-row" id="scorerow-${crit.key}">${btns.join('')}</div>`;
 }
 
+function feedbackBoxHtml(topicId, studentId, crit) {
+  const fb = ((feedbackAll[topicId] || {})[studentId] || {})[crit.key];
+  const fbId = `fb-${topicId}-${studentId}-${crit.key}`;
+  return `<div class="feedback-box">
+    <textarea id="${fbId}" placeholder="이 항목에 대한 코멘트(선택) — 학생 점수조회 페이지에도 보여요">${esc(fb ? fb.text : '')}</textarea>
+    <div class="fb-actions">
+      <button class="fb-save-btn" onclick="saveFeedback('${topicId}','${studentId}','${crit.key}')">코멘트 저장</button>
+      <span class="fb-status" id="fbstatus-${topicId}-${studentId}-${crit.key}"></span>
+    </div>
+  </div>`;
+}
+
+window.saveFeedback = async function(topicId, studentId, key) {
+  const textarea = document.getElementById(`fb-${topicId}-${studentId}-${key}`);
+  const statusEl = document.getElementById(`fbstatus-${topicId}-${studentId}-${key}`);
+  if (!textarea) return;
+  const text = textarea.value.trim();
+  feedbackAll[topicId] = feedbackAll[topicId] || {};
+  feedbackAll[topicId][studentId] = feedbackAll[topicId][studentId] || {};
+  const url = `${DB_URL}/years/${YEAR}/exhibition/gradingFeedback/${topicId}/${studentId}/${key}.json`;
+  if (text) {
+    feedbackAll[topicId][studentId][key] = { text, updatedAt: Date.now() };
+    await fetch(url, { method: 'PUT', body: JSON.stringify({ text, updatedAt: Date.now() }) });
+  } else {
+    delete feedbackAll[topicId][studentId][key];
+    await fetch(url, { method: 'DELETE' });
+  }
+  if (statusEl) {
+    statusEl.textContent = '✓ 저장됨';
+    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2000);
+  }
+};
+
 function critCardHtml(topicId, studentId, crit) {
   const ctx = { topicId, studentId, post: posts[topicId] || {} };
   return `<div class="crit-card">
     <div class="crit-group">${esc(crit.group)}</div>
     <h3>${esc(crit.label)}</h3>
     <div class="crit-range">배점: 0~${crit.max}점${crit.note ? ' ' + esc(crit.note) : ''}</div>
-    ${scoreRowHtml(topicId, studentId, crit)}
+    <div class="score-feedback-row">
+      ${scoreRowHtml(topicId, studentId, crit)}
+      ${feedbackBoxHtml(topicId, studentId, crit)}
+    </div>
     <div class="crit-content">${crit.content(ctx)}</div>
     ${crit.scope === 'group' ? `<div class="copy-group-row"><button onclick="copyGroupPrompt('${topicId}','${studentId}','${crit.key}')">이 점수를 모둠 전체에 복사</button></div>` : ''}
   </div>`;
