@@ -67,7 +67,42 @@
 .canva-link-box { margin-top: 10px; }
 .canva-link-box a { color: var(--accent); font-weight: 700; word-break: break-all; }
 
+.admin-filter-card select, .admin-filter-card input[type=text] {
+  padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem;
+  font-family: inherit; background: var(--surface); color: var(--text);
+}
+.admin-filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.admin-filter-row select { flex: 0 0 auto; }
+.admin-filter-row input[name=num] { width: 70px; }
+.admin-filter-row input[name=name] { flex: 1; min-width: 120px; }
+.admin-result-count { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px; }
+.admin-result-list { display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow-y: auto; }
+.admin-result-row {
+  text-align: left; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface);
+  cursor: pointer; font-family: inherit; font-size: 0.88rem; font-weight: 600; color: var(--text);
+}
+.admin-result-row:hover { border-color: var(--accent); }
+.admin-result-row .ar-unassigned { font-size: 0.72rem; color: var(--danger); font-weight: 700; margin-left: 6px; }
+
+.admin-nav-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.admin-nav-bar button {
+  padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);
+  font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.admin-nav-bar button:disabled { opacity: 0.4; cursor: default; }
+.admin-nav-progress { font-size: 0.78rem; color: var(--text-muted); text-align: center; flex: 1; }
+.admin-back-row { margin-bottom: 12px; }
+.admin-back-btn {
+  background: none; border: none; color: var(--accent); font-size: 0.82rem; font-weight: 700;
+  cursor: pointer; padding: 0; text-decoration: underline;
+}
+
 @media (max-width: 640px) {
+  .admin-filter-card select, .admin-filter-card input[type=text] { font-size: 1rem; padding: 12px 14px; }
+  .admin-result-row { font-size: 0.98rem; padding: 13px 14px; }
+  .admin-nav-bar button { font-size: 1rem; padding: 12px 16px; }
+  .admin-nav-progress { font-size: 0.9rem; }
+
   .header h1 { font-size: 1.35rem; }
   .header p { font-size: 0.92rem; line-height: 1.5; }
   .who-banner { font-size: 0.95rem; }
@@ -153,6 +188,15 @@ let presentRoleAll = {}, peerGroup6 = {}, peerGroup7 = {}, peerMember6 = {}, pee
 let s6Wrapup = {}, s7Wrapup = {};
 let gradingAll = {};
 let feedbackAll = {}; // topicId -> studentId -> critKey -> {text, updatedAt} — 선생님이 남긴 코멘트
+
+// 이 두 이메일로 로그인했을 때만 전체 학생 조회 기능이 열린다. 그 외 모든 계정(학생 포함)은
+// 항상 기존과 동일하게 본인 데이터만 볼 수 있다 — afterGoogleLogin()에서 이 목록과 정확히
+// 일치할 때만 isAdmin이 true가 되고, 관리자 전용 렌더 함수들도 그 경로에서만 호출된다.
+const ADMIN_EMAILS = ['kbs@gwangsu.ms.kr', 'kbs26123@gmail.com'];
+let isAdmin = false;
+let adminFilter = { ban: '', num: '', name: '' };
+let adminList = []; // 관리자 모드에서 필터링된 학생ID 목록(학번순) — 다음/이전 탐색 순서
+let adminPtr = -1;
 
 function esc(str) {
   if (!str) return '';
@@ -365,22 +409,32 @@ function contentProcedure(c) {
     if (!list.length) return '';
     return `<div class="cc-label">2차시 · ${label}</div>` + list.map(it => `<div class="cc-own-item">${esc(it.text)}</div>`).join('');
   }).filter(Boolean).join('');
-  const myBlocks = Object.values(s3Blocks[c.topicId] || {}).filter(b => b.author === c.studentId).sort((a, b) => (a.order || 0) - (b.order || 0));
-  const myBlocksHtml = myBlocks.map(renderBlockFull).join('');
-  const myContent = (myItemsParts || myBlocksHtml) ? myItemsParts + myBlocksHtml
-    : '<span class="cc-empty">(본인이 직접 작성한 항목 없음 — 모둠원이 대신 작성했을 수 있음)</span>';
+  const myContent = myItemsParts || '<span class="cc-empty">(본인이 직접 작성한 항목 없음 — 모둠원이 대신 작성했을 수 있음)</span>';
   return (parts || '<span class="cc-empty">(2차시 작성 없음)</span>') +
-    '<div class="cc-label">3차시 ① 실험 보고서 (전체)</div>' + renderBlocksSection(c.topicId) +
     '<div class="cc-label">본인이 작성한 내용</div>' + myContent;
 }
+// 3차시(① 실험 보고서 + ② 결과 정리)는 실험을 직접 수행하며 결과를 기록·해석하는 활동이라
+// "③ 탐구 절차 설계하기"가 아니라 "④ 결과 해석 및 결론 도출하기"에 묶는 게 맞다(평가계획 기준).
 function contentResult(c) {
+  const summaryFields = [['prediction', '가설 예측'], ['actualResult', '실제 실험 결과'], ['conclusion', '결론 정리'], ['principle', '원리 탐구']];
   const summary = s3Summary[c.topicId] || {};
-  const parts = [['prediction', '가설 예측'], ['actualResult', '실제 실험 결과'], ['conclusion', '결론 정리'], ['principle', '원리 탐구']].map(function([key, label]) {
+  const parts = summaryFields.map(function([key, label]) {
     const list = Object.values(summary[key] || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     if (!list.length) return '';
     return `<div class="cc-label">${label}</div>` + list.map(it => esc(it.text)).join('<br>');
   }).filter(Boolean).join('');
-  return parts || '<span class="cc-empty">(3차시 ② 작성 없음)</span>';
+  const myBlocks = Object.values(s3Blocks[c.topicId] || {}).filter(b => b.author === c.studentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const myBlocksHtml = myBlocks.map(renderBlockFull).join('');
+  const mySummaryParts = summaryFields.map(function([key, label]) {
+    const list = Object.values(summary[key] || {}).filter(it => it.author === c.studentId).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (!list.length) return '';
+    return `<div class="cc-label">${label}</div>` + list.map(it => `<div class="cc-own-item">${esc(it.text)}</div>`).join('');
+  }).filter(Boolean).join('');
+  const myContent = (myBlocksHtml || mySummaryParts) ? myBlocksHtml + mySummaryParts
+    : '<span class="cc-empty">(본인이 직접 작성한 항목 없음 — 모둠원이 대신 작성했을 수 있음)</span>';
+  return (parts || '<span class="cc-empty">(3차시 ② 작성 없음)</span>') +
+    '<div class="cc-label">3차시 ① 실험 보고서 (전체)</div>' + renderBlocksSection(c.topicId) +
+    '<div class="cc-label">본인이 작성한 내용</div>' + myContent;
 }
 function contentDisplay(c) {
   const link = s4CanvaLink[c.topicId];
@@ -576,41 +630,153 @@ async function loadAll() {
   feedbackAll = fb || {};
 }
 
-function render() {
-  const mine = finalGroups[student.id];
-  const content = document.getElementById('content');
+function studentDetailHtml(studentId) {
+  const mine = finalGroups[studentId];
   if (!mine) {
-    content.innerHTML = '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
-    return;
+    return '<div class="empty-state">아직 모둠이 배정되지 않았습니다. 1차시에서 모둠 배정이 끝난 뒤 다시 확인해주세요.</div>';
   }
   const topicId = mine.topicId;
   const groupMembers = Object.entries(finalGroups).filter(([, g]) => g.topicId === topicId).map(([sid]) => sid)
     .sort((a, b) => ((preferences[a] || {}).num || 0) - ((preferences[b] || {}).num || 0));
   const title = groupTitleOf(topicId);
-  const rec = (gradingAll[topicId] || {})[student.id] || {};
+  const rec = (gradingAll[topicId] || {})[studentId] || {};
   const gradedKeys = CRITERIA.filter(c => rec[c.key] !== undefined && rec[c.key] !== null);
   const sum = gradedKeys.reduce((s, c) => s + Number(rec[c.key]), 0);
 
-  content.innerHTML = `
+  return `
     <div class="student-banner">
-      <div class="sb-name">${memberLabel(student.id)}</div>
+      <div class="sb-name">${memberLabel(studentId)}</div>
       <div class="sb-group"><b>${esc(title)}</b> · 모둠원: ${groupMembers.map(memberLabel).join(', ')}</div>
     </div>
     <div class="total-bar">
       <span>현재까지 받은 점수</span>
       <span class="total-score">${sum} / ${CRIT_MAX_TOTAL}${gradedKeys.length < CRITERIA.length ? ` (${gradedKeys.length}/${CRITERIA.length}개 채점됨)` : ''}</span>
     </div>
-    <div class="summary-card"><table>${scoreSummaryHtml(topicId, student.id)}</table></div>
-    ${CRITERIA.map(c => critCardHtml(topicId, student.id, c)).join('')}
+    <div class="summary-card"><table>${scoreSummaryHtml(topicId, studentId)}</table></div>
+    ${CRITERIA.map(c => critCardHtml(topicId, studentId, c)).join('')}
   `;
 }
+
+// 일반 학생 로그인 시: 본인 데이터만 보여준다.
+function render() {
+  document.getElementById('content').innerHTML = studentDetailHtml(student.id);
+}
+
+// ── 관리자(kbs@gwangsu.ms.kr, kbs26123@gmail.com) 전용: 반/번호/이름으로 학생을 찾아
+// 아무 학생이나 조회할 수 있는 화면. 일반 학생 계정에는 이 코드 경로 자체가 절대 실행되지
+// 않는다 — afterGoogleLogin()에서 ADMIN_EMAILS와 정확히 일치하는 이메일일 때만 호출됨. ──
+function banOptionsFromRoster() {
+  const set = new Set(Object.values(roster).map(s => String(s.ban)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+}
+
+function adminFilteredStudents() {
+  return Object.entries(roster)
+    .filter(([, s]) => {
+      if (adminFilter.ban && String(s.ban) !== adminFilter.ban) return false;
+      if (adminFilter.num && String(s.num) !== adminFilter.num) return false;
+      if (adminFilter.name && !String(s.name || '').includes(adminFilter.name)) return false;
+      return true;
+    })
+    .sort((a, b) => a[0].localeCompare(b[0], 'ko', { numeric: true })) // 학번순
+    .map(([sid]) => sid);
+}
+
+function renderAdminResultList() {
+  const list = adminFilteredStudents();
+  document.getElementById('adminResultCount').textContent = `${list.length}명`;
+  document.getElementById('adminResultList').innerHTML = list.length
+    ? list.map(sid => {
+        const s = roster[sid];
+        const unassigned = !finalGroups[sid] ? '<span class="ar-unassigned">모둠 미배정</span>' : '';
+        return `<button type="button" class="admin-result-row" onclick="adminOpenStudent('${sid}')">${esc(s.ban)}반 ${esc(s.num)}번 ${esc(s.name)}${unassigned}</button>`;
+      }).join('')
+    : '<div class="empty-state">조건에 맞는 학생이 없습니다.</div>';
+}
+
+// 필터 입력칸(특히 이름 검색)을 매 입력마다 통째로 다시 그리면 한글 조합이 깨지므로,
+// 결과 목록(#adminResultList)만 갱신하고 입력창 자체는 다시 그리지 않는다.
+window.onAdminFilterChange = function() {
+  adminFilter.ban = document.getElementById('adminBanSelect').value;
+  adminFilter.num = document.getElementById('adminNumInput').value.trim();
+  adminFilter.name = document.getElementById('adminNameInput').value.trim();
+  renderAdminResultList();
+};
+
+window.renderAdminFilter = function() {
+  const content = document.getElementById('content');
+  const bans = banOptionsFromRoster();
+  content.innerHTML = `
+    <div class="card admin-filter-card">
+      <h2>학생 조회 (관리자)</h2>
+      <div class="hint">반/번호/이름으로 학생을 찾아 조회할 수 있습니다.</div>
+      <div class="admin-filter-row">
+        <select id="adminBanSelect" onchange="onAdminFilterChange()">
+          <option value="">전체 반</option>
+          ${bans.map(b => `<option value="${escAttr(b)}"${adminFilter.ban === b ? ' selected' : ''}>${esc(b)}반</option>`).join('')}
+        </select>
+        <input type="text" name="num" id="adminNumInput" placeholder="번호" inputmode="numeric" value="${escAttr(adminFilter.num)}" oninput="onAdminFilterChange()">
+        <input type="text" name="name" id="adminNameInput" placeholder="이름 검색" value="${escAttr(adminFilter.name)}" oninput="onAdminFilterChange()">
+      </div>
+      <div class="admin-result-count" id="adminResultCount"></div>
+      <div class="admin-result-list" id="adminResultList"></div>
+    </div>
+  `;
+  renderAdminResultList();
+};
+
+window.adminOpenStudent = function(studentId) {
+  adminList = adminFilteredStudents(); // 지금 필터 조건을 그대로 다음/이전 탐색 순서로 고정
+  adminPtr = adminList.indexOf(studentId);
+  renderAdminDetail();
+};
+
+function renderAdminDetail() {
+  if (adminPtr < 0 || adminPtr >= adminList.length) return;
+  const sid = adminList[adminPtr];
+  const s = roster[sid] || {};
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="admin-back-row"><button type="button" class="admin-back-btn" onclick="renderAdminFilter()">◀ 학생 목록으로</button></div>
+    <div class="admin-nav-bar">
+      <button type="button" onclick="adminPrevStudent()"${adminPtr <= 0 ? ' disabled' : ''}>◀ 이전 학생</button>
+      <span class="admin-nav-progress">${adminPtr + 1} / ${adminList.length} · ${esc(s.ban)}반 ${esc(s.num)}번 ${esc(s.name)}</span>
+      <button type="button" onclick="adminNextStudent()"${adminPtr >= adminList.length - 1 ? ' disabled' : ''}>다음 학생 ▶</button>
+    </div>
+    <div id="adminStudentContent"></div>
+  `;
+  document.getElementById('adminStudentContent').innerHTML = studentDetailHtml(sid);
+}
+
+window.adminPrevStudent = function() {
+  if (adminPtr > 0) { adminPtr--; renderAdminDetail(); }
+};
+window.adminNextStudent = function() {
+  if (adminPtr < adminList.length - 1) { adminPtr++; renderAdminDetail(); }
+};
 
 // 로그인 확인된 이메일을 학생 명단(years/{year}/students)과 대조해 본인 확인.
 // 일치하는 학생이 없으면 false를 돌려줘서, 모듈 스크립트 쪽에서 로그아웃 처리하게 한다
 // (교직원 계정 등 학생이 아닌 구글 계정으로 로그인했을 때 로그인 상태가 계속 남지 않도록).
+//
+// ⚠ ADMIN_EMAILS와 정확히 일치하는 이메일일 때만 관리자(전체 학생 조회) 모드로 들어간다.
+// 그 외에는 이메일이 무엇이든(학생이든 다른 교직원이든) 항상 아래의 일반 학생 대조 로직만
+// 실행되므로, 학생 계정으로는 관리자 기능에 도달할 방법이 없다.
 async function afterGoogleLogin(email) {
   try {
     YEAR = await loadYear();
+
+    if (ADMIN_EMAILS.includes(email)) {
+      isAdmin = true;
+      student = { id: null, name: '관리자', email };
+      document.getElementById('step-login').style.display = 'none';
+      document.getElementById('step-main').style.display = 'block';
+      document.getElementById('whoLabel').textContent = `관리자 모드 (${email})`;
+      await loadAll();
+      renderAdminFilter();
+      return true;
+    }
+
     const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
     const all = (await res.json()) || {};
     const match = Object.entries(all).find(([, s]) => String(s.email || '').toLowerCase() === email);
@@ -619,6 +785,7 @@ async function afterGoogleLogin(email) {
       return false;
     }
     const [sid, s] = match;
+    isAdmin = false;
     student = { id: sid, name: s.name, grade: s.grade, ban: s.ban, num: s.num, email: s.email };
     setSrStudent(student);
     document.getElementById('step-login').style.display = 'none';
@@ -659,8 +826,11 @@ window.afterGoogleLogin = afterGoogleLogin; // 아래 모듈 스크립트에서 
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  // hd(호스팅 도메인) 힌트를 주면 학교 계정(@gwangsu.ms.kr) 선택 화면이 먼저 뜨는 대신,
+  // 관리자용 개인 Gmail(kbs26123@gmail.com) 계정은 "다른 계정 사용"을 거쳐야만 보여서
+  // 매번 불편했다. 실제 접근 제어는 afterGoogleLogin()의 이메일 대조/화이트리스트가
+  // 전담하므로 hd 힌트 없이도 안전하다 — 그래서 여기서는 아예 지정하지 않는다.
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ hd: "gwangsu.ms.kr" });
 
   const btn = document.getElementById("gSignInBtn");
 
