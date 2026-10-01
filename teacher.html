@@ -240,6 +240,18 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
 });
 
+// 채점 화면에서는 Enter만 눌러도 다음 학생으로 넘어간다. 단, 코멘트 입력칸 등 텍스트를
+// 입력 중일 때는 Enter가 줄바꿈 등 원래 기능대로 동작해야 하므로 그 경우엔 건너뛴다.
+// preventDefault()로 포커스된 점수 버튼이 Enter에 반응해 다시 클릭(토글)되는 것도 막는다.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (ptr < 0) return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
+  e.preventDefault();
+  goNext();
+});
+
 async function loadYear() {
   const res = await fetch(`${DB_URL}/config/current.json`);
   const cfg = await res.json();
