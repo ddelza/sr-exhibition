@@ -49,6 +49,8 @@
 .crit-content .cc-own-item { margin-bottom: 6px; }
 .crit-content .cc-own-item:last-child { margin-bottom: 0; }
 .crit-content .cc-sublabel { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); margin: 6px 0 2px; }
+.crit-content .cc-practice-ref { margin-bottom: 6px; color: var(--text-muted); }
+.crit-content .cc-practice-ref:last-child { margin-bottom: 0; }
 .crit-content .no-content { color: var(--text-muted); font-style: normal; }
 .table-scroll-x { overflow-x: auto; margin-top: 4px; }
 .block-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
@@ -467,7 +469,7 @@ function contentReflect(c, keys) {
   const practiceHtml = practice
     ? keys.map(function(k) {
         const val = practice[k];
-        return val ? `<div class="cc-own-item"><b>${esc(REFLECT_Q_LABELS[k])}</b>: ${esc(val)}</div>` : '';
+        return val ? `<div class="cc-practice-ref"><b>${esc(REFLECT_Q_LABELS[k])}</b>: ${esc(val)}</div>` : '';
       }).filter(Boolean).join('')
     : '';
   return `<div class="cc-label">9차시 · 실전 성찰일지</div>${realHtml}` +
