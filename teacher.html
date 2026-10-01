@@ -242,16 +242,36 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
 });
 
-// 채점 화면에서는 Enter만 눌러도 다음 학생으로 넘어간다. 단, 코멘트 입력칸 등 텍스트를
-// 입력 중일 때는 Enter가 줄바꿈 등 원래 기능대로 동작해야 하므로 그 경우엔 건너뛴다.
-// preventDefault()로 포커스된 점수 버튼이 Enter에 반응해 다시 클릭(토글)되는 것도 막는다.
+// 채점 화면 키보드 단축키 — Enter: 다음 학생, 숫자키: 그 숫자로 점수 반영.
+// 코멘트 입력칸 등 텍스트를 입력 중일 때는 원래 기능(줄바꿈 등)대로 동작해야 하므로 건너뛴다.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  if (ptr < 0) return;
+  if (ptr < 0 || ptr >= flatList.length) return;
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
-  e.preventDefault();
-  goNext();
+
+  if (e.key === 'Enter') {
+    // preventDefault()로, 포커스된 점수 버튼이 Enter에 반응해 다시 클릭(토글)되는 것도 막는다.
+    e.preventDefault();
+    goNext();
+    return;
+  }
+
+  if (/^[0-9]$/.test(e.key)) {
+    // 포커스가 가 있는 점수 행(score-row)이 있으면 그 항목에 적용하고, 없으면(평가요소별
+    // 채점 모드처럼 화면에 점수 행이 하나뿐일 때만) 현재 선택된 평가요소에 적용한다.
+    // 학생별 채점 모드에서 어느 카드를 가리키는지 특정할 수 없을 때는 오채점을 막기 위해
+    // 아무 것도 하지 않는다.
+    const focusedRow = document.activeElement && document.activeElement.closest && document.activeElement.closest('.score-row[data-crit]');
+    const critKey = focusedRow ? focusedRow.dataset.crit : (mode === 'criterion' ? selectedCrit : null);
+    if (!critKey) return;
+    const crit = CRITERIA.find(c => c.key === critKey);
+    if (!crit) return;
+    const value = Number(e.key);
+    if (value < crit.min || value > crit.max) return;
+    e.preventDefault();
+    const cur = flatList[ptr];
+    pickScore(cur.topicId, cur.studentId, crit.key, value);
+  }
 });
 
 async function loadYear() {
@@ -805,7 +825,7 @@ function scoreRowHtml(topicId, studentId, crit) {
   for (let v = crit.min; v <= crit.max; v++) {
     btns.push(`<button class="score-btn${current === v ? ' selected' : ''}" data-val="${v}" onclick="pickScore('${topicId}','${studentId}','${crit.key}',${v})">${v}</button>`);
   }
-  return `<div class="score-row" id="scorerow-${crit.key}">${btns.join('')}</div>`;
+  return `<div class="score-row" id="scorerow-${crit.key}" data-crit="${crit.key}">${btns.join('')}</div>`;
 }
 
 function feedbackBoxHtml(topicId, studentId, crit) {
