@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모둠 배정 관리 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<style>
+.wrap { max-width: 700px; }
+select { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; background: var(--surface); color: var(--text); }
+.topic-row { background: var(--surface); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.topic-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.topic-row-top .name { font-weight: 700; font-size: 0.95rem; }
+.topic-author { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px; }
+.topic-row-top input { width: 70px; padding: 7px 8px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.88rem; text-align: center; }
+.pref-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 0.76rem; color: var(--text-muted); }
+.pref-cols .col-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.pref-cols div div { line-height: 1.6; }
+
+.unassigned-box { background: var(--danger-soft); color: var(--danger); border-radius: 12px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 8px; }
+
+.assign-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 4px; }
+.assign-table th, .assign-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.assign-table th { font-size: 0.76rem; color: var(--text-muted); font-weight: 700; }
+.assign-table td.topic-cell { font-weight: 600; }
+.assign-table tr.rank-1 { background: #dcf5e3; }
+.assign-table tr.rank-2 { background: #fff6d0; }
+.assign-table tr.rank-3 { background: var(--bg); }
+.assign-table tr.rank-none { background: var(--danger-soft); }
+.rank-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
+.rank-badge.rank-1 { background: #a8e6b8; color: #1a5c2e; }
+.rank-badge.rank-2 { background: #ffe58a; color: #7a5c00; }
+.rank-badge.rank-3 { background: var(--border); color: var(--text-muted); }
+.rank-badge.rank-none { background: #f2b8ae; color: #7a2e22; }
+
+.submission-summary { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+.missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.missing-chip { background: var(--danger-soft); color: var(--danger); border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; }
+.unapplied-list { display: flex; flex-direction: column; gap: 6px; }
+.unapplied-row { display: flex; align-items: center; gap: 8px; background: var(--danger-soft); border-radius: 10px; padding: 6px 10px; }
+.unapplied-row .unapplied-name { font-size: 0.85rem; font-weight: 600; color: var(--danger); flex: 1; }
+.unapplied-row select { font-size: 0.8rem; padding: 5px 6px; }
+.unapplied-row button {
+  padding: 6px 12px; border: none; border-radius: 6px; background: var(--accent); color: #fff;
+  font-size: 0.78rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.unapplied-row .assigned-tag { font-size: 0.74rem; color: var(--accent); white-space: nowrap; }
+
+.current-topic { background: var(--surface); border-radius: 12px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.current-topic .name { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; }
+.member-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 0.85rem; }
+.member-row select { font-size: 0.8rem; padding: 5px 6px; }
+.member-row .saved-flash { color: var(--accent); font-size: 0.72rem; }
+</style>
+<script src="session-demo.js"></script>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="header">
+    <h1>👥 모둠 배정 관리 (교사용)</h1>
+    <p>반별로 지망 신청 현황을 보고, 모둠 정원을 정한 뒤 자동으로 배정합니다.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner"><span>모둠 배정 관리</span><div class="links"><a href="teacher1.html">게시글 채택 관리</a><a href="teacher2.html">2차시 관리</a><a href="teacher3.html">3차시 관리</a><a href="teacher4.html">4차시 관리</a><a href="teacher5.html">5차시 관리</a><a href="teacher67.html">6·7차시 관리</a><a href="teacher8.html">8차시 관리</a><a href="teacher9.html">9차시 관리</a><a href="teacher_video.html">발표 영상 등록</a><a href="teacher-status.html">전체 진행현황</a><a href="score-table.html">학생 점수표</a><a href="teacher.html">전람회 채점</a></div></div>
+
+    <div class="card">
+      <h2>반 선택</h2>
+      <p class="hint">지망을 신청한 학생이 있는 반만 목록에 나타납니다. 모둠은 같은 반 학생끼리만 편성됩니다.</p>
+      <select id="banSelect" onchange="onBanChange()"></select>
+    </div>
+
+    <div class="card">
+      <h2>지망 미신청 학생</h2>
+      <div id="unappliedStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>현재 등록된 모둠</h2>
+      <p class="hint">이미 등록된 모둠입니다. 드롭다운으로 학생을 다른 모둠으로 옮기거나 모둠에서 뺄 수 있습니다 (선택 즉시 저장).</p>
+      <div id="currentGroups"></div>
+    </div>
+
+    <div class="card">
+      <h2>모둠(주제)별 정원</h2>
+      <p class="hint">정원을 0으로 두면 이번 배정에서 제외됩니다. 아래 지망 신청자 목록은 선택한 반 기준입니다.</p>
+      <div id="topicSettings"></div>
+    </div>
+
+    <div class="card">
+      <button class="btn" onclick="runAssign()">이 반 자동 배정 실행</button>
+    </div>
+
+    <div id="resultWrap"></div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const PASSWORD = 'srdemo2026!';
+const TARGET_GRADE = 3; // 이 전람회는 3학년 대상. 다른 학년도 참여하게 되면 이 값을 조정할 것.
+let YEAR = null;
+let adoptedAll = {}; // { [ban]: { [postId]: {label, ts} } }
+let posts = {}; // { postId: {grade,ban,num,name,question,...} } — 작성자 표시용
+let roster = {}; // { studentId: {grade,ban,num,name,...} } — 지망 미신청자 확인용, 3학년 전체 명단
+let preferences = {}; // { studentId: {name,grade,ban,num,choice1,choice2,choice3,ts} }
+let finalGroups = {}; // { studentId: {topicId, topicLabel, ban, ts} }
+let capacities = {};
+let selectedBan = '';
+let lastResult = null; // { assigned: {studentId: topicId}, unassignedIds: [...] }
+let lastTargets = null; // 균형 배분으로 정해진 주제별 목표 인원 { [topicId]: number }
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.checkPw = function() {
+  const v = document.getElementById('pwInput').value;
+  if (v !== PASSWORD) {
+    document.getElementById('pwError').textContent = '비밀번호가 일치하지 않습니다.';
+    document.getElementById('pwError').classList.add('show');
+    return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+});
+
+async function loadYear() {
+  const res = await fetch(`${DB_URL}/years/demo2026/_config.json`);
+  const cfg = await res.json();
+  return (cfg && cfg.year) || new Date().getFullYear();
+}
+
+async function loadAll() {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1`;
+  const [a, p, cap, fg, ps] = await Promise.all([
+    fetch(`${base}/adopted.json`).then(r => r.json()),
+    fetch(`${base}/preferences.json`).then(r => r.json()),
+    fetch(`${base}/groupCapacity.json`).then(r => r.json()),
+    fetch(`${base}/finalGroups.json`).then(r => r.json()),
+    fetch(`${base}/posts.json`).then(r => r.json()),
+  ]);
+  adoptedAll = a || {};
+  preferences = p || {};
+  capacities = cap || {};
+  finalGroups = fg || {};
+  posts = ps || {};
+}
+
+function authorLine(topicId) {
+  const post = posts[topicId];
+  return post ? `${esc(post.grade)}학년 ${esc(post.ban)}반 ${esc(post.num)}번 ${esc(post.name)}` : '';
+}
+
+function currentAdopted() {
+  return adoptedAll[selectedBan] || {};
+}
+
+function bansAvailable() {
+  const set = new Set([
+    ...Object.values(preferences).map(p => String(p.ban)),
+    ...Object.values(finalGroups).map(g => String(g.ban)),
+    ...Object.keys(adoptedAll),
+    ...Object.values(roster).map(s => String(s.ban)),
+  ]);
+  return [...set].sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }));
+}
+
+function renderUnappliedStatus() {
+  const wrap = document.getElementById('unappliedStatus');
+  const classStudents = Object.entries(roster)
+    .filter(([, s]) => String(s.ban) === selectedBan)
+    .map(([id, s]) => ({ id, ...s }))
+    .sort((a, b) => (a.num || 0) - (b.num || 0));
+
+  if (!classStudents.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반의 명단을 찾을 수 없습니다.</div>';
+    return;
+  }
+
+  const appliedIds = new Set(Object.entries(preferences).filter(([, p]) => String(p.ban) === selectedBan).map(([id]) => id));
+  const missing = classStudents.filter(s => !appliedIds.has(s.id));
+
+  let html = `<div class="submission-summary">신청 ${classStudents.length - missing.length} / ${classStudents.length}명</div>`;
+  if (!missing.length) {
+    html += '<div class="ok-msg show">전원 신청했습니다 🎉</div>';
+  } else {
+    html += '<p class="hint">지망을 안 낸 학생도 아래에서 주제를 골라 바로 모둠에 넣을 수 있습니다.</p>';
+    const adopted = currentAdopted();
+    const topicOptionsFor = (currentId) => `<option value="">모둠 선택</option>` + Object.keys(adopted).map(id =>
+      `<option value="${id}"${id === currentId ? ' selected' : ''}>${esc(adopted[id].label)}</option>`
+    ).join('');
+    html += '<div class="unapplied-list">' + missing.map(s => {
+      const fg = finalGroups[s.id];
+      const currentTopic = (fg && String(fg.ban) === selectedBan) ? fg.topicId : '';
+      return `<div class="unapplied-row">
+        <span class="unapplied-name">${esc(s.num)}번 ${esc(s.name)}</span>
+        <select id="manual-${s.id}">${topicOptionsFor(currentTopic)}</select>
+        <button onclick="assignUnapplied('${s.id}')">${currentTopic ? '변경' : '배정'}</button>
+        ${currentTopic ? '<span class="assigned-tag">✓ 배정됨</span>' : ''}
+      </div>`;
+    }).join('') + '</div>';
+  }
+  wrap.innerHTML = html;
+}
+
+window.assignUnapplied = async function(studentId) {
+  const sel = document.getElementById('manual-' + studentId);
+  const topicId = sel.value;
+  const adopted = currentAdopted();
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups/${studentId}.json`;
+  if (!topicId) {
+    await fetch(base, { method: 'DELETE' });
+    delete finalGroups[studentId];
+  } else {
+    const payload = { topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() };
+    await fetch(base, { method: 'PUT', body: JSON.stringify(payload) });
+    finalGroups[studentId] = payload;
+  }
+  renderUnappliedStatus();
+  renderCurrentGroups();
+};
+
+function memberLabel(studentId) {
+  const p = preferences[studentId];
+  if (p) return `${esc(p.num)}번 ${esc(p.name)}`;
+  const r = roster[studentId]; // 지망 미신청 상태로 수동 배정된 학생은 preferences가 없으므로 명단에서 이름을 가져온다
+  if (r) return `${esc(r.num)}번 ${esc(r.name)} (지망 미신청)`;
+  return esc(studentId);
+}
+
+function renderCurrentGroups() {
+  const wrap = document.getElementById('currentGroups');
+  const entries = Object.entries(finalGroups).filter(([, g]) => String(g.ban) === selectedBan);
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반은 아직 등록된 모둠이 없습니다.</div>';
+    return;
+  }
+  const byTopic = {};
+  entries.forEach(([sid, g]) => { (byTopic[g.topicId] = byTopic[g.topicId] || []).push(sid); });
+
+  const adopted = currentAdopted();
+  const topicOptions = (currentId) => Object.keys(adopted).map(id =>
+    `<option value="${id}"${id === currentId ? ' selected' : ''}>${esc(adopted[id].label)}</option>`
+  ).join('') + `<option value=""${!currentId ? ' selected' : ''}>— 모둠에서 빼기 —</option>`;
+
+  wrap.innerHTML = Object.entries(byTopic).map(([topicId, sids]) => {
+    const label = adopted[topicId] ? adopted[topicId].label : (finalGroups[sids[0]].topicLabel || '(삭제된 주제)');
+    const author = authorLine(topicId);
+    return `<div class="current-topic">
+      ${author ? `<div class="topic-author">${author}</div>` : ''}
+      <div class="name">${esc(label)} (${sids.length}명)</div>
+      ${sids.map(sid => `<div class="member-row">
+        <span>${memberLabel(sid)}</span>
+        <span>
+          <select onchange="onMoveMember('${sid}', this.value)">${topicOptions(topicId)}</select>
+          <span class="saved-flash" id="flash-${sid}"></span>
+        </span>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+window.onMoveMember = async function(studentId, newTopicId) {
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups/${studentId}.json`;
+  if (!newTopicId) {
+    await fetch(base, { method: 'DELETE' });
+    delete finalGroups[studentId];
+  } else {
+    const payload = { topicId: newTopicId, topicLabel: currentAdopted()[newTopicId].label, ban: selectedBan, ts: Date.now() };
+    await fetch(base, { method: 'PUT', body: JSON.stringify(payload) });
+    finalGroups[studentId] = payload;
+  }
+  const flash = document.getElementById('flash-' + studentId);
+  if (flash) { flash.textContent = '✓ 저장됨'; setTimeout(() => { if (flash) flash.textContent = ''; }, 1500); }
+  renderCurrentGroups();
+};
+
+function renderBanSelect() {
+  const bans = bansAvailable();
+  const sel = document.getElementById('banSelect');
+  if (!bans.length) {
+    sel.innerHTML = '<option value="">아직 지망을 신청한 학생이 없습니다</option>';
+    selectedBan = '';
+    return;
+  }
+  if (!selectedBan || !bans.includes(selectedBan)) selectedBan = bans[0];
+  sel.innerHTML = bans.map(b => `<option value="${esc(b)}"${b === selectedBan ? ' selected' : ''}>${esc(b)}반</option>`).join('');
+}
+
+function studentsInSelectedBan() {
+  return Object.entries(preferences)
+    .filter(([, p]) => String(p.ban) === selectedBan)
+    .map(([studentId, p]) => ({ studentId, ...p }));
+}
+
+function renderTopicSettings() {
+  const students = studentsInSelectedBan();
+  const wrap = document.getElementById('topicSettings');
+  const adopted = currentAdopted();
+  const topicIds = Object.keys(adopted);
+  if (!topicIds.length) {
+    wrap.innerHTML = '<div class="empty-state">이 반에는 채택된 주제가 없습니다. 먼저 게시글 채택 관리에서 이 반의 글을 채택해주세요.</div>';
+    return;
+  }
+  wrap.innerHTML = topicIds.map(topicId => {
+    const byRank = r => students.filter(s => s['choice' + r] === topicId);
+    const col = (title, list) => `<div><div class="col-title">${title} (${list.length})</div>${list.map(s => `<div>${esc(s.ban)}반 ${esc(s.num)}번 ${esc(s.name)}</div>`).join('') || '<div>-</div>'}</div>`;
+    const author = authorLine(topicId);
+    return `<div class="topic-row">
+      ${author ? `<div class="topic-author">${author}</div>` : ''}
+      <div class="topic-row-top">
+        <span class="name">${esc(adopted[topicId].label)}</span>
+        <input type="number" min="0" id="cap-${topicId}" value="${capacities[topicId] || 0}">
+      </div>
+      <div class="pref-cols">
+        ${col('1지망', byRank(1))}
+        ${col('2지망', byRank(2))}
+        ${col('3지망', byRank(3))}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.onBanChange = function() {
+  selectedBan = document.getElementById('banSelect').value;
+  document.getElementById('resultWrap').innerHTML = '';
+  lastResult = null;
+  renderUnappliedStatus();
+  renderCurrentGroups();
+  renderTopicSettings();
+};
+
+async function saveCapacities() {
+  const topicIds = Object.keys(currentAdopted());
+  const newCap = {};
+  topicIds.forEach(id => { newCap[id] = Number(document.getElementById('cap-' + id).value) || 0; });
+  capacities = newCap;
+  await fetch(`${DB_URL}/years/${YEAR}/exhibition/s1/groupCapacity.json`, { method: 'PUT', body: JSON.stringify(newCap) });
+}
+
+// 배정 원칙 (사용자와 합의한 순서 — 모둠 인원 균형이 추가되면서 우선순위를 다시 정리함):
+//  1) 학생이 신청하지 않은 주제에는 절대 배정하지 않는다.
+//  2) 모둠 인원 균형: 최종 모둠 중 가장 큰 인원과 가장 작은 인원의 차이가 1명 이하가 되도록 한다
+//     (2 이상 벌어지지 않게). 단, 어떤 주제를 아무도 1~3지망으로 고르지 않았다면 그 주제는 억지로
+//     채울 수 없으므로(1원칙과 충돌) 균형 계산에서 제외한다.
+//  3) 2)에서 정해진 인원 한도 안에서, 1지망 또는 2지망으로 배정되는 인원을 최대한 많게 한다.
+//  4) 3)을 만족하는 배정들 중에서, 1지망으로 배정되는 인원이 최대가 되게 한다.
+//
+// 균형(2번)을 3·4번(선호도 최적화)보다 먼저 두는 이유: 균형은 "이 배정이 가능한가/불가능한가"를
+// 가르는 하드한 제약(모둠당 인원 상한)으로 다루는 게 논리적으로 가장 깔끔하다 — 상한을 먼저 정해두면
+// 그 안에서 선호도를 최적화하는 문제로 그대로 이어지고, 반대로 선호도를 먼저 최적화한 뒤에 인원을
+// 맞추려 하면 이미 확정된 1지망 배정을 다시 깨야 하는 경우가 생겨 "1지망 최대화"라는 4번 원칙과
+// 정면으로 충돌한다.
+//
+// 구현: computeBalancedTargets()가 "이 주제를 1~3지망 중 하나로든 고른 학생 수"와 "교사가 정한
+// 정원" 중 작은 값을 각 주제의 실질 상한으로 두고, 가장 인원이 적은 주제부터 1명씩 채워나가는
+// 방식(물 채우기)으로 목표 인원을 정한다. 이렇게 나온 목표 인원을 기존의 최소비용최대유량
+// (1·2지망만으로 그래프를 만들고, 1지망 비용 0·2지망 비용 1로 "유량 최대 → 비용 최소"를 구하면
+// 그대로 3·4번 원칙이 됨)의 정원으로 그대로 사용한다.
+//
+// 1·2지망으로 배정되지 못한 학생은, 3지망 주제에 남은 자리가 있으면(목표 인원 안에서, 1·2지망
+// 결과는 그대로 두고 남는 자리만 사용) 채운다. 그래도 안 되면 미배정으로 남긴다.
+//
+// 주의: 목표 인원은 상한일 뿐 보장이 아니다 — 어떤 주제를 지망한 학생들이 전부 다른(더 우선순위
+// 높은) 주제로 먼저 배정돼버리면, 그 주제는 목표 인원만큼 못 채우고 작아질 수 있다. 이건 학생들이
+// 실제로 신청한 지망 안에서만 배정한다는 1원칙 때문에 생기는 어쩔 수 없는 한계라, 배정 후 실제
+// 인원 차이가 여전히 크면 화면에 안내하고 "현재 등록된 모둠"의 이동 드롭다운으로 수동 조정하게 한다.
+//
+// 동점 처리(예: 1지망만으로도 정원 초과)는 학번이나 제출시각 순이 아니라 매번 무작위로 섞은
+// 뒤에 배정한다 — 최소비용최대유량은 "배정 인원 최대, 그 안에서 1지망 최대"라는 총량만
+// 보장할 뿐 그 조건을 만족하는 여러 조합 중 정확히 어떤 조합을 고를지는 정해주지 않으므로,
+// 입력 순서를 랜덤화해서 특정 학번/제출순서가 매번 유리해지지 않게 한다.
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// 각 주제의 "목표 인원"을 정한다.
+// 1) 실질 상한(ceiling) = 교사가 정한 정원과, 그 주제를 1~3지망 중 하나로든 고른 학생 수(demand)
+//    중 작은 값. 아무도 고르지 않은 주제(demand 0)는 강제로 채울 학생이 없으니 애초에 제외한다.
+// 2) 그중 가장 작은 ceiling(minCeiling)이 이 반이 "다 같이 도달할 수 있는" 인원이다. 다른 주제가
+//    아무리 인기가 많아도 minCeiling짜리 주제는 그 이상 못 늘어나므로, 최대-최소 차이를 1 이하로
+//    맞추려면 나머지 주제도 minCeiling+1을 넘지 않게 캡을 씌워야 한다 — 그래서 모든 주제의 목표를
+//    min(자기 ceiling, minCeiling+1)로 정한다. 이러면 산술적으로 항상 차이 ≤ 1이 보장된다.
+// 인기 주제 쪽에서 이 캡 때문에 못 들어간 학생은 자기 2·3지망으로 넘어가거나(아래 3지망 채우기
+// 단계), 그래도 안 되면 미배정으로 남아 화면에 표시된다 — 특정 주제 하나의 인원이 극단적으로
+// 적어서 다른 모든 주제가 크게 제한된다면, 그 주제의 정원을 0으로 두어 이번 배정에서 빼는 것도
+// 방법이라고 안내한다(위 "모둠(주제)별 정원"에서 조정).
+function computeBalancedTargets(topicIds, students, cap) {
+  const demand = {};
+  topicIds.forEach(id => {
+    demand[id] = students.filter(s => s.choice1 === id || s.choice2 === id || s.choice3 === id).length;
+  });
+  const active = topicIds.filter(id => (cap[id] || 0) > 0 && demand[id] > 0);
+
+  const ceiling = {};
+  active.forEach(id => { ceiling[id] = Math.min(cap[id] || 0, demand[id]); });
+
+  const target = {};
+  topicIds.forEach(id => { target[id] = 0; });
+  if (!active.length) return target;
+
+  const minCeiling = Math.min(...active.map(id => ceiling[id]));
+  const maxAllowed = minCeiling + 1;
+  active.forEach(id => { target[id] = Math.min(ceiling[id], maxAllowed); });
+  return target;
+}
+
+function assign(studentsIn, topicIds, cap, hardCap) {
+  hardCap = hardCap || cap;
+  const students = shuffled(studentsIn);
+  const n = students.length;
+  const m = topicIds.length;
+  const S = 0, T = n + m + 1;
+  const studentNode = i => 1 + i;
+  const topicNode = j => 1 + n + j;
+  const topicIndex = {};
+  topicIds.forEach((id, j) => { topicIndex[id] = j; });
+
+  const graph = Array.from({ length: n + m + 2 }, () => []);
+  function addEdge(u, v, capacity, cost) {
+    graph[u].push({ to: v, cap: capacity, cost, other: graph[v].length });
+    graph[v].push({ to: u, cap: 0, cost: -cost, other: graph[u].length - 1 });
+  }
+
+  students.forEach((s, i) => {
+    addEdge(S, studentNode(i), 1, 0);
+    if (s.choice1 && topicIndex[s.choice1] !== undefined) addEdge(studentNode(i), topicNode(topicIndex[s.choice1]), 1, 0);
+    if (s.choice2 && topicIndex[s.choice2] !== undefined) addEdge(studentNode(i), topicNode(topicIndex[s.choice2]), 1, 1);
+  });
+  topicIds.forEach((id, j) => addEdge(topicNode(j), T, cap[id] || 0, 0));
+
+  // SPFA 기반 최소비용 최대유량. 그래프가 작아서(학생 수십 명, 주제 몇 개) 이 정도로 충분하다.
+  while (true) {
+    const dist = new Array(graph.length).fill(Infinity);
+    const inQueue = new Array(graph.length).fill(false);
+    const prevNode = new Array(graph.length).fill(-1);
+    const prevEdge = new Array(graph.length).fill(-1);
+    dist[S] = 0;
+    const queue = [S];
+    inQueue[S] = true;
+    while (queue.length) {
+      const u = queue.shift();
+      inQueue[u] = false;
+      graph[u].forEach((e, idx) => {
+        if (e.cap > 0 && dist[u] + e.cost < dist[e.to]) {
+          dist[e.to] = dist[u] + e.cost;
+          prevNode[e.to] = u;
+          prevEdge[e.to] = idx;
+          if (!inQueue[e.to]) { inQueue[e.to] = true; queue.push(e.to); }
+        }
+      });
+    }
+    if (dist[T] === Infinity) break; // 더 이상 늘릴 수 있는 배정이 없음
+
+    let aug = Infinity;
+    for (let v = T; v !== S; v = prevNode[v]) aug = Math.min(aug, graph[prevNode[v]][prevEdge[v]].cap);
+    for (let v = T; v !== S; v = prevNode[v]) {
+      const e = graph[prevNode[v]][prevEdge[v]];
+      e.cap -= aug;
+      graph[v][e.other].cap += aug;
+    }
+  }
+
+  const assigned = {};
+  students.forEach((s, i) => {
+    graph[studentNode(i)].forEach(e => {
+      if (e.cap === 0) assigned[s.studentId] = topicIds[e.to - 1 - n]; // 이 간선으로 유량이 흘렀다 = 이 주제로 배정됨
+    });
+  });
+
+  // 3지망: 1·2지망 결과는 그대로 두고, 남은 자리에 한해서만 채운다.
+  const remaining = {};
+  topicIds.forEach(id => {
+    const used = Object.values(assigned).filter(t => t === id).length;
+    remaining[id] = (cap[id] || 0) - used;
+  });
+  shuffled(students.filter(s => !assigned[s.studentId] && s.choice3))
+    .forEach(s => {
+      if (remaining[s.choice3] > 0) {
+        assigned[s.studentId] = s.choice3;
+        remaining[s.choice3]--;
+      }
+    });
+
+  // 그래도 배정 안 된 학생: 지망과 무관하게, 교사가 정한 실제 정원(균형 목표가 아니라)까지
+  // 남은 자리에 채운다. 이때도 지금 인원이 가장 적은 모둠부터 채워서 균형이 덜 깨지게 한다.
+  // 이렇게 배정된 학생은 지망 어디에도 없던 자리이므로 화면에 "지망 외 배정"으로 따로 표시한다.
+  const forced = {};
+  const sizeOf = id => Object.values(assigned).filter(t => t === id).length;
+  shuffled(students.filter(s => !assigned[s.studentId])).forEach(s => {
+    const candidates = topicIds.filter(id => sizeOf(id) < (hardCap[id] || 0));
+    if (!candidates.length) return;
+    candidates.sort((a, b) => sizeOf(a) - sizeOf(b));
+    assigned[s.studentId] = candidates[0];
+    forced[s.studentId] = true;
+  });
+
+  const unassignedIds = students.filter(s => !assigned[s.studentId]).map(s => s.studentId);
+  return { assigned, unassignedIds, forced };
+}
+
+window.runAssign = async function() {
+  if (!selectedBan) return;
+  await saveCapacities();
+  const students = studentsInSelectedBan();
+  const adopted = currentAdopted();
+  const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
+  if (!topicIds.length) {
+    document.getElementById('resultWrap').innerHTML =
+      '<div class="error-msg show">모든 모둠의 정원이 0입니다. 위 "모둠(주제)별 정원"에 최소 하나 이상 인원 수를 입력한 뒤 다시 실행해주세요.</div>';
+    lastResult = null;
+    return;
+  }
+  lastTargets = computeBalancedTargets(topicIds, students, capacities);
+  lastResult = assign(students, topicIds, lastTargets, capacities);
+  renderResult(students);
+};
+
+function rankOfChoice(student, topicId) {
+  if (student.choice1 === topicId) return 1;
+  if (student.choice2 === topicId) return 2;
+  if (student.choice3 === topicId) return 3;
+  return null;
+}
+
+function renderResult(students) {
+  const byId = {};
+  students.forEach(s => { byId[s.studentId] = s; });
+
+  const adopted = currentAdopted();
+  const topicIds = Object.keys(adopted).filter(id => (capacities[id] || 0) > 0);
+
+  const rows = topicIds.flatMap(topicId => {
+    const members = Object.entries(lastResult.assigned)
+      .filter(([, t]) => t === topicId)
+      .map(([studentId]) => byId[studentId])
+      .sort((a, b) => (a.num || 0) - (b.num || 0));
+    return members.map((m, i) => ({ topicId, member: m, isFirstOfTopic: i === 0, count: members.length }));
+  });
+
+  const sizesUsed = topicIds.map(id => rows.filter(r => r.topicId === id).length).filter(n => n > 0);
+  const sizeDiff = sizesUsed.length ? Math.max(...sizesUsed) - Math.min(...sizesUsed) : 0;
+
+  const forcedCount = lastResult.forced ? Object.keys(lastResult.forced).length : 0;
+
+  let html = '<div class="card"><h2>배정 결과 미리보기</h2>';
+  html += sizeDiff <= 1
+    ? `<div class="ok-msg show">모둠 인원이 균형있게 배정되었습니다 (최대-최소 차이 ${sizeDiff}명).</div>`
+    : `<div class="unassigned-box">일부 주제는 지망자가 적어 목표 인원만큼 채우지 못해, 모둠 간 인원 차이가 ${sizeDiff}명입니다. 아래 "현재 등록된 모둠"에서 등록 후 수동으로 옮길 수 있습니다.</div>`;
+  if (forcedCount > 0) {
+    html += `<div class="unassigned-box">${forcedCount}명은 1~3지망 어디에도 자리가 없어, 지망과 무관하게 남은 자리(표에 "지망 외 배정"으로 표시)에 채웠습니다.</div>`;
+  }
+  html += '<table class="assign-table"><thead><tr><th>모둠(주제)</th><th>번호</th><th>이름</th><th>지망</th></tr></thead><tbody>';
+  html += rows.map(r => {
+    const isForced = lastResult.forced && lastResult.forced[r.member.studentId];
+    const rank = isForced ? null : rankOfChoice(r.member, r.topicId);
+    const rankLabel = isForced
+      ? `<span class="rank-badge rank-none">지망 외 배정</span>`
+      : (rank ? `<span class="rank-badge rank-${rank}">${rank}지망</span>` : '');
+    const topicCell = r.isFirstOfTopic
+      ? `<td class="topic-cell" rowspan="${r.count}">${esc(adopted[r.topicId].label)} (${r.count}/${lastTargets[r.topicId]}명, 정원 ${capacities[r.topicId]}명)</td>`
+      : '';
+    return `<tr class="rank-${isForced ? 'none' : (rank || '')}">${topicCell}<td>${esc(r.member.num)}</td><td>${esc(r.member.name)}</td><td>${rankLabel}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted)">배정된 학생이 없습니다.</td></tr>';
+  html += '</tbody></table>';
+
+  if (lastResult.unassignedIds.length) {
+    html += `<div class="unassigned-box">배정되지 못한 학생 (${lastResult.unassignedIds.length}명): ${lastResult.unassignedIds.map(id => `${esc(byId[id].num)}번 ${esc(byId[id].name)}`).join(', ')} — 정원을 늘리면 다시 배정할 수 있습니다.</div>`;
+  }
+  html += `<button class="btn" onclick="registerGroups()">이 반(${esc(selectedBan)}반) 모둠 등록하기</button>
+  <div class="ok-msg" id="registerOk"></div>
+  </div>`;
+  document.getElementById('resultWrap').innerHTML = html;
+}
+
+window.registerGroups = async function() {
+  if (!lastResult) return;
+  const adopted = currentAdopted();
+  const base = `${DB_URL}/years/${YEAR}/exhibition/s1/finalGroups`;
+  const writes = Object.entries(lastResult.assigned).map(([studentId, topicId]) => {
+    const payload = { topicId, topicLabel: adopted[topicId].label, ban: selectedBan, ts: Date.now() };
+    finalGroups[studentId] = payload;
+    return fetch(`${base}/${studentId}.json`, { method: 'PUT', body: JSON.stringify(payload) });
+  });
+  await Promise.all(writes);
+  const ok = document.getElementById('registerOk');
+  if (ok) { ok.textContent = `${selectedBan}반 모둠이 등록되었습니다. 학생들은 모둠 신청 페이지에서 결과를 확인할 수 있습니다.`; ok.classList.add('show'); }
+  renderCurrentGroups();
+};
+
+async function loadRoster() {
+  const res = await fetch(`${DB_URL}/years/${YEAR}/students.json`);
+  const all = (await res.json()) || {};
+  const filtered = {};
+  Object.entries(all).forEach(([id, s]) => { if (Number(s.grade) === TARGET_GRADE) filtered[id] = s; });
+  roster = filtered;
+}
+
+async function init() {
+  try {
+    YEAR = await loadYear();
+    await loadRoster();
+    await loadAll();
+    renderBanSelect();
+    renderUnappliedStatus();
+    renderCurrentGroups();
+    renderTopicSettings();
+  } catch (e) {
+    document.getElementById('topicSettings').innerHTML = `<div class="empty-state">불러오기 실패: ${esc(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>

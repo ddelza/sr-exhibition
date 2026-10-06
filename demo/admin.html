@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>연수 데모 관리자 — 자극과 반응 전람회</title>
+<link rel="stylesheet" href="common.css">
+<script src="session-demo.js"></script>
+<style>
+.wrap { max-width: 980px; }
+.card h2 { font-size: 0.98rem; margin: 0 0 10px; }
+.hint { font-size: 0.85rem; color: var(--muted, #6b6f85); margin: 4px 0 10px; line-height: 1.5; }
+textarea { width: 100%; min-height: 140px; padding: 10px; border: 1.5px solid var(--border); border-radius: 10px; font-family: inherit; font-size: 0.9rem; box-sizing: border-box; }
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th, td { border-bottom: 1px solid var(--border); padding: 7px 8px; text-align: left; vertical-align: top; }
+th { background: var(--surface, #f6f5fb); font-weight: 700; }
+td.num, th.num { text-align: center; }
+tr.bad td { background: #fdecea; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #f1eefc; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.btn.secondary { background: #fff; color: var(--text); border: 1.5px solid var(--border); }
+.btn.small { padding: 4px 10px; font-size: 0.8rem; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem; background: #efeafe; }
+.scroll { overflow-x: auto; }
+.muted { color: var(--muted, #6b6f85); }
+.spread-hi { color: #c0392b; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>🛠 연수 데모 관리자</h1>
+    <p>연수 계정(3601~3630) 명단 등록과 선생님들의 채점 실습 기록을 한곳에서 관리합니다.</p>
+  </div>
+
+  <div class="step active" id="step-pw">
+    <div class="card">
+      <h2>관리자 비밀번호</h2>
+      <input type="password" id="pwInput">
+      <div class="error-msg" id="pwError"></div>
+      <button class="btn" onclick="checkPw()">입장</button>
+    </div>
+  </div>
+
+  <div class="step" id="step-main" style="display:none">
+    <div class="who-banner">
+      <span>연수 데모 관리자</span>
+      <div class="links"><a href="index.html">데모 메인</a><a href="teacher.html">전람회 채점</a><a href="teacher1.html">게시글 채택 관리</a><a href="teacher1-groups.html">모둠 배정 관리</a><a href="teacher-status.html">전체 진행현황</a></div>
+    </div>
+
+    <div class="card">
+      <h2>① 연수 계정 명단 등록 (6반 · 3601~3630)</h2>
+      <p class="hint">엑셀에서 <b>학번</b>과 <b>이름</b> 두 열을 그대로 복사해 붙여넣으세요 (한 줄에 한 명, 예: <code>3601	김선생</code>).
+        등록하면 선생님들은 메인 화면에서 이 학번과 이름으로 입장하고, 학생처럼 6반 활동을 하면서 채점 실습도 할 수 있습니다.</p>
+      <textarea id="rosterInput" placeholder="3601	김선생&#10;3602	이선생"></textarea>
+      <div class="row">
+        <button class="btn secondary" onclick="previewRoster()">미리보기</button>
+        <button class="btn" id="registerBtn" onclick="registerRoster()" disabled>등록하기</button>
+        <span id="rosterMsg" class="muted"></span>
+      </div>
+      <div id="rosterPreview" style="margin-top:10px"></div>
+      <h2 style="margin-top:18px">등록된 연수 계정 <span id="acctCount" class="pill">0명</span></h2>
+      <div id="acctList" class="scroll"></div>
+    </div>
+
+    <div class="card">
+      <h2>② 채점 실습 기록 한눈에 보기</h2>
+      <p class="hint">각 선생님의 채점은 서로 섞이지 않게 따로 저장됩니다(선생님들은 자기 채점만 봅니다). 줄을 누르면 그 선생님의 학생별 점수가 펼쳐집니다.</p>
+      <div class="row" style="margin-top:0"><button class="btn secondary small" onclick="loadGrading()">새로고침</button><span id="gradeMsg" class="muted"></span></div>
+      <div id="graderSummary" class="scroll" style="margin-top:10px"></div>
+      <div id="graderDetail" class="scroll" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2>③ 같은 학생, 선생님마다 몇 점?</h2>
+      <p class="hint">두 명 이상이 11항목을 다 채점한 학생만 모았습니다. 총점 차이가 큰 학생부터 보여주니, 연수에서 "루브릭 해석 차이"를 이야기할 때 활용하세요.</p>
+      <div id="compare" class="scroll"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_URL = 'https://gwangsu-on-default-rtdb.firebaseio.com';
+const YEAR = 'demo2026';
+const ADMIN_PW = 'srdemo2026!';
+const BASE = `${DB_URL}/years/${YEAR}`;
+const CRITERIA = [
+  ['q_question', '①질문', 2], ['q_hypo', '②가설', 2], ['q_procedure', '③절차', 2], ['q_result', '④결과', 3],
+  ['q_display', '⑤전시', 2], ['q_qa', '⑥질의', 2], ['q_reflect1', '⑦성찰1', 2], ['q_reflect2', '⑧성찰2', 2],
+  ['q_reflect3', '⑨성찰3', 2], ['q_peer', '⑩비판질문', 4], ['q_concept', '⑪개념', 2],
+];
+let roster = {}, grading = {}, finalGroups = {}, previewRows = [];
+
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function isDemoAcct(id) { return /^36(0[1-9]|[12]\d|30)$/.test(id); }
+function graderName(gid) {
+  if (gid === 'admin') return '관리자(비밀번호 입장)';
+  const r = roster[gid];
+  return r ? `${gid} ${r.name}` : gid;
+}
+function studentLabel(sid) {
+  const r = roster[sid];
+  return r ? `${sid} ${r.name}` : sid;
+}
+function total(rec) { return CRITERIA.reduce((s, c) => s + (Number(rec[c[0]]) || 0), 0); }
+function filled(rec) { return CRITERIA.filter(c => rec[c[0]] !== undefined && rec[c[0]] !== null && rec[c[0]] !== '').length; }
+function fmtTime(ts) { return ts ? new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'; }
+
+window.checkPw = function () {
+  if (document.getElementById('pwInput').value !== ADMIN_PW) {
+    const e = document.getElementById('pwError'); e.textContent = '비밀번호가 일치하지 않습니다.'; e.classList.add('show'); return;
+  }
+  document.getElementById('step-pw').style.display = 'none';
+  document.getElementById('step-main').style.display = 'block';
+  init();
+};
+document.getElementById('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') checkPw(); });
+
+async function init() { await loadRoster(); await loadGrading(); }
+
+async function loadRoster() {
+  roster = (await (await fetch(`${BASE}/students.json`)).json()) || {};
+  renderAccounts();
+}
+
+function renderAccounts() {
+  const ids = Object.keys(roster).filter(id => roster[id] && roster[id].demoTeacher).sort();
+  document.getElementById('acctCount').textContent = `${ids.length}명`;
+  document.getElementById('acctList').innerHTML = ids.length
+    ? `<table><tr><th class="num">학번</th><th>이름</th><th class="num">6반 번호</th><th></th></tr>${ids.map(id =>
+        `<tr><td class="num">${esc(id)}</td><td>${esc(roster[id].name)}</td><td class="num">${esc(roster[id].num)}</td>
+         <td class="num"><button class="btn secondary small" onclick="removeAcct('${esc(id)}')">삭제</button></td></tr>`).join('')}</table>`
+    : '<p class="muted">아직 등록된 연수 계정이 없습니다.</p>';
+}
+
+window.previewRoster = function () {
+  const lines = document.getElementById('rosterInput').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const seen = new Set();
+  previewRows = lines.map(line => {
+    const parts = line.split(/[\t,]+|\s{2,}|\s+/).filter(Boolean);
+    const id = (parts[0] || '').replace(/\D/g, '');
+    const name = parts.slice(1).join(' ').trim();
+    let err = '';
+    if (!isDemoAcct(id)) err = '학번은 3601~3630';
+    else if (!name) err = '이름 없음';
+    else if (seen.has(id)) err = '학번 중복';
+    seen.add(id);
+    return { id, name, err };
+  });
+  const bad = previewRows.filter(r => r.err).length;
+  document.getElementById('rosterPreview').innerHTML = previewRows.length
+    ? `<table><tr><th class="num">학번</th><th>이름</th><th>확인</th></tr>${previewRows.map(r =>
+        `<tr class="${r.err ? 'bad' : ''}"><td class="num">${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.err ? esc(r.err) : (roster[r.id] ? '이미 있음 → 이름 갱신' : '새로 등록')}</td></tr>`).join('')}</table>`
+    : '';
+  document.getElementById('registerBtn').disabled = !previewRows.length || bad > 0;
+  document.getElementById('rosterMsg').textContent = previewRows.length ? (bad ? `오류 ${bad}줄 — 고친 뒤 다시 미리보기` : `${previewRows.length}명 등록 준비됨`) : '붙여넣은 내용이 없습니다.';
+};
+
+window.registerRoster = async function () {
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true;
+  const updates = {};
+  previewRows.forEach(r => { updates[r.id] = { grade: 3, ban: 6, num: Number(r.id) - 3600, name: r.name, demoTeacher: true }; });
+  const res = await fetch(`${BASE}/students.json`, { method: 'PATCH', body: JSON.stringify(updates) });
+  document.getElementById('rosterMsg').textContent = res.ok ? `${previewRows.length}명 등록 완료` : '등록 실패 — 다시 시도해 주세요.';
+  if (res.ok) { document.getElementById('rosterPreview').innerHTML = ''; previewRows = []; await loadRoster(); }
+  btn.disabled = res.ok;
+};
+
+window.removeAcct = async function (id) {
+  if (!isDemoAcct(id) || !roster[id] || !roster[id].demoTeacher) return;
+  if (!confirm(`${id} ${roster[id].name} 계정을 삭제할까요? (이 선생님의 채점 실습 기록은 남습니다)`)) return;
+  await fetch(`${BASE}/students/${id}.json`, { method: 'DELETE' });
+  await loadRoster();
+};
+
+window.loadGrading = async function () {
+  document.getElementById('gradeMsg').textContent = '불러오는 중...';
+  const [g, fg] = await Promise.all([
+    fetch(`${BASE}/exhibition/practiceGrading.json`).then(r => r.json()),
+    fetch(`${BASE}/exhibition/s1/finalGroups.json`).then(r => r.json()),
+  ]);
+  grading = g || {}; finalGroups = fg || {};
+  document.getElementById('gradeMsg').textContent = `${fmtTime(Date.now())} 기준`;
+  renderSummary(); renderCompare();
+  document.getElementById('graderDetail').innerHTML = '';
+};
+
+// grading: graderId -> topicId -> studentId -> rec  =>  graderId -> [{sid, topicId, rec}]
+function flatten(gid) {
+  const out = [];
+  Object.entries(grading[gid] || {}).forEach(([topicId, byStu]) => {
+    Object.entries(byStu || {}).forEach(([sid, rec]) => { if (rec && filled(rec)) out.push({ sid, topicId, rec }); });
+  });
+  return out.sort((a, b) => a.sid.localeCompare(b.sid));
+}
+
+function renderSummary() {
+  const gids = Object.keys(grading).sort();
+  if (!gids.length) { document.getElementById('graderSummary').innerHTML = '<p class="muted">아직 채점 실습 기록이 없습니다.</p>'; return; }
+  const rows = gids.map(gid => {
+    const list = flatten(gid);
+    const done = list.filter(x => filled(x.rec) === CRITERIA.length).length;
+    const avg = list.length ? (list.reduce((s, x) => s + total(x.rec), 0) / list.length).toFixed(1) : '-';
+    const last = Math.max(0, ...list.map(x => x.rec.updatedAt || 0));
+    return `<tr class="clickable" onclick="showGrader('${esc(gid)}')"><td>${esc(graderName(gid))}</td><td class="num">${list.length}</td><td class="num">${done}</td><td class="num">${avg}</td><td class="num">${fmtTime(last)}</td></tr>`;
+  }).join('');
+  document.getElementById('graderSummary').innerHTML =
+    `<table><tr><th>채점한 선생님</th><th class="num">채점한 학생</th><th class="num">11항목 완료</th><th class="num">평균 총점(25)</th><th class="num">마지막 채점</th></tr>${rows}</table>`;
+}
+
+window.showGrader = function (gid) {
+  const list = flatten(gid);
+  const head = `<tr><th>학생</th><th>모둠</th>${CRITERIA.map(c => `<th class="num">${c[1]}<br><span class="muted">/${c[2]}</span></th>`).join('')}<th class="num">총점</th></tr>`;
+  const body = list.map(x => `<tr><td>${esc(studentLabel(x.sid))}</td><td>${esc((finalGroups[x.sid] || {}).topicLabel || '')}</td>${
+    CRITERIA.map(c => `<td class="num">${x.rec[c[0]] === undefined ? '<span class="muted">·</span>' : esc(x.rec[c[0]])}</td>`).join('')
+  }<td class="num"><b>${total(x.rec)}</b></td></tr>`).join('');
+  document.getElementById('graderDetail').innerHTML = `<h2>${esc(graderName(gid))} 선생님의 채점 (${list.length}명)</h2><table>${head}${body}</table>`;
+};
+
+function renderCompare() {
+  const bySid = {};
+  Object.keys(grading).forEach(gid => flatten(gid).forEach(x => { (bySid[x.sid] = bySid[x.sid] || []).push({ gid, t: total(x.rec), n: filled(x.rec) }); }));
+  // 11항목을 다 채운 채점끼리만 비교한다 — 진행 중인 채점까지 넣으면 차이가 부풀려 보인다.
+  const rows = Object.entries(bySid).map(([sid, all]) => {
+    const arr = all.filter(a => a.n === CRITERIA.length);
+    const ts = arr.map(a => a.t);
+    return { sid, arr, pending: all.length - arr.length, min: Math.min(...ts), max: Math.max(...ts), spread: Math.max(...ts) - Math.min(...ts) };
+  }).filter(r => r.arr.length >= 2).sort((a, b) => b.spread - a.spread);
+  document.getElementById('compare').innerHTML = rows.length
+    ? `<table><tr><th>학생</th><th class="num">채점자 수</th><th class="num">최저</th><th class="num">최고</th><th class="num">차이</th><th>선생님별 총점</th></tr>${rows.map(r =>
+        `<tr><td>${esc(studentLabel(r.sid))}</td><td class="num">${r.arr.length}</td><td class="num">${r.min}</td><td class="num">${r.max}</td>
+         <td class="num ${r.spread >= 4 ? 'spread-hi' : ''}">${r.spread}</td>
+         <td>${r.arr.map(a => `${esc(graderName(a.gid).replace(/^\d+ /, ''))} ${a.t}`).join(' · ')}${r.pending ? ` <span class="muted">(+${r.pending}명 채점 중)</span>` : ''}</td></tr>`).join('')}</table>`
+    : '<p class="muted">아직 두 명 이상이 11항목을 다 채점한 학생이 없습니다.</p>';
+}
+</script>
+</body>
+</html>
